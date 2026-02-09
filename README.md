@@ -1,1 +1,1 @@
-# bmi702_project
+# bmi702-project
