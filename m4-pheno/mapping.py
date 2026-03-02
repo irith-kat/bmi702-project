@@ -29,3 +29,21 @@ def rollup_icd_to_phecode(df: pd.DataFrame, icd_column: str, mapping_file: str =
         
     return result_df
 
+def rollup_rxnorm_to_ingredient(df: pd.DataFrame, rxnorm_column: str) -> pd.DataFrame:
+    """
+    Roll up RxNorm codes to ingredient-level.
+    
+    Note: This currently serves as a placeholder for integration with an RxNorm API 
+     или a local RxNav-style mapping table.
+    """
+    # TODO: Implement RxNorm to Ingredient mapping (e.g., using RxNav API or local DB)
+    return df
+
+def rollup_cpt_to_ccs(df: pd.DataFrame, cpt_column: str) -> pd.DataFrame:
+    """
+    Map CPT codes to Clinical Classifications Software (CCS) categories.
+    
+    Note: CCS for Services and Procedures mapping is required.
+    """
+    # TODO: Implement CPT to CCS mapping
+    return df
