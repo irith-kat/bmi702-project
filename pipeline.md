@@ -26,7 +26,7 @@ The aim of this module is to teach the agent how to take the harmonized data and
 ### Required Functions
 * **`note_ner.extract_cui_features(notes_df, text_column, id_column, target_cuis)`**: Substitutes our initial idea to use NILE for a more modern python based approach using MedSpacy. This function takes a DataFrame of clinical notes, extracts CUIs using MedSpacy, and returns a summary matrix of CUI counts for each patient.
 
-* **`komap.run_komap(args TBD)`**: The Python-R bridge that trains the KOMAP model on the Data Mart to identify the true Disease Cohort. Either have the prewritten file and allow the agent to call the python function that wraps the R code, or write the code as a skill and let the agent adapt and run its R code from the command line using subprocess.
+* **`komap.run_komap(args TBD)`**: The Python-R bridge that trains the KOMAP model on the Data Mart to identify the true Disease Cohort. Have the prewritten file and allow the agent to call the python function that wraps the R code.
 
 TBD
 
