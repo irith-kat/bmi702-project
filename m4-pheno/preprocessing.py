@@ -28,7 +28,7 @@ def prepare_map_inputs(
     # 1. Codified features
     phecode_df = rollup_icd_to_phecode(ehr_df, icd_col)
     mat_df = phecode_df.pivot_table(
-        index="subject_id", columns="Phecode", aggfunc="count", fill_value=0
+        index="subject_id", columns="Phecode", aggfunc="size", fill_value=0
     )
 
     # 2. Note counts
