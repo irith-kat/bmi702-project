@@ -2,10 +2,10 @@
 The aim of these functions and skills is to teach the agent how to take raw EHR data and transform it into a format that can be effectively used for RWE generation. This includes mapping raw codes to standardized vocabularies, extracting relevant features, and handling missing data.
 
 ### Required Functions
-* **`mapping.rollup_icd_to_phecode(df, type)`**: Maps raw ICD-9/10 to PheCodes.
-* **`mapping.rollup_rxnorm_to_ingredient(df)`**: Maps RxNorm codes to their active ingredients.
-* **`mapping.rollup_loinc_to_test(df)`**: Maps LOINC codes to their corresponding test-level concepts.
-* **`mapping.rollup_cpt_to_ccs(df)`**: Maps CPT/HCPCS codes to CCS categories for procedures. It accepts a df, but might need to be adapted to work with summary level data if needed. https://hcup-us.ahrq.gov/toolssoftware/ccsr/prccsr.jsp
+* **`rollup.rollup_icd_to_phecode(df, type)`**: Maps raw ICD-9/10 to PheCodes.
+* **`rollup.rollup_rxnorm_to_ingredient(df)`**: Maps RxNorm codes to their active ingredients.
+* **`rollup.rollup_loinc_to_test(df)`**: Maps LOINC codes to their corresponding test-level concepts.
+* **`rollup.rollup_cpt_to_ccs(df)`**: Maps CPT/HCPCS codes to CCS categories for procedures. It accepts a df, but might need to be adapted to work with summary level data if needed. https://hcup-us.ahrq.gov/toolssoftware/ccsr/prccsr.jsp
 
 ### Optional functions for code understanding (MCP)
 MCP for understanding codes? that simply provides code definitions to the LLM to ensure it understands the medical concepts behind the codes it's working with. This could be a simple function that takes a list of codes and returns their definitions, which the agent can then use to inform its reasoning when selecting features or interpreting results.
