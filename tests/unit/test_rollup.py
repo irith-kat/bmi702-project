@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from mapping import (
+from rollup import (
     rollup_cpt_to_ccs,
     rollup_icd_to_phecode,
     rollup_rxnorm_to_ingredient,
