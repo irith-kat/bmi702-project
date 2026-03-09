@@ -21,12 +21,27 @@ def rollup_icd_to_phecode(
     if not os.path.exists(mapping_file):
         raise FileNotFoundError(f"Mapping file not found: {mapping_file}")
 
-    # Load mapping - focusing on ICD and Phecode columns
+    def _add_icd_dot(code: str) -> str:
+        """
+        Insert a '.' at position 3 if the ICD code does not already contain one.
+        (ICD codes in raw MIMIC-IV data are stored without the dot.)
+        """
+        if pd.isna(code):
+            return code
+        code = str(code)
+        if "." not in code and len(code) > 3:
+            return code[:3] + "." + code[3:]
+        return code
+
+    # Load mapping
     map_df = pd.read_csv(
         mapping_file,
         usecols=["ICD", "Phecode", "PhecodeString"],
         dtype={"ICD": str, "Phecode": str},
     )
+
+    # Normalize ICD codes in the input dataframe
+    df[icd_column] = df[icd_column].apply(_add_icd_dot)
 
     # Merge with input data
     # We use a left join to keep all original rows
