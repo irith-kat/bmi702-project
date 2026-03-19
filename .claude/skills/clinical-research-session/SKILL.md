@@ -118,7 +118,7 @@ Collect study parameters through structured terminal conversation. The interview
 
 ### Question Library
 
-Use `AskUserQuestion` to collect structured answers. Compose from these standard questions:
+Use `AskUserQuestion` to collect structured answers. Compose from these standard questions, and add custom ones as needed:
 
 **Research question type:**
 - Association study (Is variable X associated with outcome Y?)
@@ -148,10 +148,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - None (descriptive study)
 
 **Base population:**
-- Sepsis-3 (SOFA ≥ 2 + suspected infection)
-- Septic shock (Sepsis-3 + vasopressor + lactate > 2)
-- ARDS / respiratory failure
-- General ICU (all admissions)
+- If there is any pre-defined population (e.g., sepsis, AKI, heart failure), identify it here. If not, MAP phenotyping will be used to identify the disease cohort from the full population.
 
 **Exclusion criteria** (multiple allowed):
 - First ICU stay only
@@ -194,13 +191,13 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 [Specific, answerable question]
 
 ### Study Design
-[Descriptive/Comparative/Predictive/Exploratory]
+[Descriptive/Comparative/Predictive/Exploratory/...]
 
 ### Population
 **Inclusion:** [criteria]
 **Exclusion:** [criteria with rationale]
 
-### Variables
+### Variables (adapt the section as suitable for the study)
 **Primary Outcome:** [definition and measurement]
 **Exposure:** [definition and timing]
 **Covariates:** [list with definitions]
@@ -212,13 +209,13 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 ### Potential Biases & Limitations
 - [Known limitation]
 
-### M4 Skills to Use
+### Skills to Use
 - [Skill]: [Why]
 ```
 
 ---
 
-## Phase 3: Scientific Integrity Guardrails
+## Scientific Integrity Guardrails
 
 Apply throughout the analysis.
 
@@ -276,43 +273,88 @@ Preferred plot types: Kaplan-Meier for survival, forest plots for effect sizes, 
 
 ---
 
-## Phase 4: M4 Skills Reference
+## M4 Skills Reference
 
-### Severity Scores
-| Skill | When to Use |
-|-------|-------------|
-| `sofa-score` | Organ dysfunction, Sepsis-3 criteria |
-| `apsiii-score` | Comprehensive severity with mortality prediction |
-| `sapsii-score` | Alternative to APACHE, international benchmarking |
-| `oasis-score` | When labs unavailable (vitals only) |
-| `sirs-criteria` | Historical sepsis definition, comparison studies |
+### Phenotyping Pipeline (use in this order for disease cohort identification)
 
-### Cohort Definitions
-| Skill | When to Use |
-|-------|-------------|
-| `sepsis-3-cohort` | Sepsis studies (SOFA ≥ 2 + suspected infection) |
-| `first-icu-stay` | Avoid correlated observations |
-| `suspicion-of-infection` | Infection timing (antibiotics + cultures) |
+When the goal is to identify patients with a specific disease from EHR data, invoke these three skills **sequentially**. Each skill's output is the next skill's input.
 
-### Clinical Concepts
-| Skill | When to Use |
-|-------|-------------|
-| `kdigo-aki-staging` | AKI as outcome or covariate |
-| `vasopressor-equivalents` | Standardize vasopressor doses |
-| `baseline-creatinine` | AKI baseline reference |
-| `gcs-calculation` | Neurological status |
+| Step | Skill | What it does | Input | Output |
+|------|-------|-------------|-------|--------|
+| 1 | `preprocessing-strategy` | Parse ONCE files; roll up ICD→PheCode, CPT→CCS, etc. | Raw EHR tables (diagnoses, procedures, labs, prescriptions) | Per-modality DataFrames (phecode_df, ccs_df, …) |
+| 2 | `build-datamart` | Pivot modality DataFrames + NLP CUI extraction into unified patient × feature matrix | Modality DataFrames + ONCE features + discharge notes | `mat_df`, `note_df` |
+| 3 | `map-phenotyping` | Run MAP mixture model → per-patient probability scores + binary case/control labels | `mat_df`, `note_df`, anchor PheCode | `map_results` with `score` and `phenotype` columns |
+
+**Trigger rule:** If the user mentions ONCE files, MAP phenotyping, or wants to identify patients with a disease condition, always start with `preprocessing-strategy` before touching any feature matrix code. If the ONCE files are not present, refer the user to https://shiny.parse-health.org/ONCE/ and make him download the NLP dictionary and the codified features, and place them in the repo root. Recommend applying a filter to phenotyping_features = True to reduce noise in the selection.
+
+**Script naming convention for phenotyping:**
+```
+01_cohort_definition.py    ← pull raw EHR tables (m4-api)
+02_feature_matrix.py       ← preprocessing-strategy + build-datamart
+03_map_phenotyping.py      ← map-phenotyping
+04_characterization.py     ← describe the identified cohort
+```
+
+**Critical: backend switching for notes**
+
+Tabular EHR data (diagnoses, admissions, etc.) uses the DuckDB backend; clinical notes use BigQuery. Always switch backends explicitly when crossing data sources:
+
+```python
+from m4.config import set_active_backend
+from m4 import set_dataset
+
+# Tabular EHR (local DuckDB)
+set_active_backend("duckdb")
+set_dataset("mimic-iv-demo")  # or "mimic-iv"
+
+# ... query diagnoses, procedures, etc. ...
+
+# Switch to BigQuery for clinical notes
+set_active_backend("bigquery")
+set_dataset("mimic-iv-note")
+
+# ... fetch discharge summaries, run NER ...
+```
+
+**min_nonzero guidance:** Always apply a global sparsity filter to ALL mat_df columns before running MAP — not just PheCodes. MAP's flexmix EM crashes ("Log-likelihood: NA") on any column with too few non-zero patients, regardless of dataset size. Sparsity is driven by term rarity, not cohort size: even in full MIMIC-IV, device codes or highly specific exam findings from the ONCE NLP dictionary may appear in <20 patients. Use `min_nonzero=20` (default) for full datasets, `5` for demo/pilot runs. The anchor PheCode is always retained.
 
 ### Data & Methodology
 | Skill | When to Use |
 |-------|-------------|
 | `m4-api` | Multi-step analysis, statistical tests |
 | `mimic-table-relationships` | Understanding joins |
-| `clinical-research-pitfalls` | Review for common errors |
-| `mimic-eicu-mapping` | Cross-dataset queries |
+---
+
+## Example Flows
+
+### Phenotyping study
+
+**User:** "Find all patients with hemorrhoids using the ONCE files and MAP"
+
+**What you already know:** disease = hemorrhoids, method = MAP phenotyping, ONCE files present. Skip most interview questions; ask only about dataset and goal (identification only vs. characterization).
+
+**After response:**
+- Confirm ONCE codified and narrative files exist in the repo root (glob `ONCE_*.csv`)
+- Identify anchor PheCode from the codified file (`target_similarity == 1.0`)
+- Note whether notes are needed (always yes for MAP — CUIs improve recall)
+
+**Protocol → approval → execute (4 scripts):**
+```
+01_cohort_definition.py     ← m4-api: pull subjects, diagnoses, procedures (DuckDB)
+02_feature_matrix.py        ← preprocessing-strategy + build-datamart:
+                               rollup ICD→PheCode, fetch notes (BigQuery), NER, assemble mat_df + note_df
+03_map_phenotyping.py       ← map-phenotyping: run MAP, apply threshold, save scored cohort
+04_characterization.py      ← describe cases: demographics, comorbidities, top features
+```
+
+**Key checks before MAP:**
+- Apply global sparsity filter (`min_nonzero`) to ALL columns after joining NLP features, not just PheCodes
+- Verify anchor PheCode column exists in mat_df (bare string, e.g. `"455"`, not `"PheCode:455"`)
+- Verify note_df has no zero values
 
 ---
 
-## Example Flow
+### Comparative/outcomes study
 
 **User:** "I want to study if early vasopressor use affects mortality in sepsis"
 

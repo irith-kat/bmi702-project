@@ -118,9 +118,13 @@ NLP features capture phenotype signal in clinical notes that coded data misses. 
 
 ```python
 from m4 import set_dataset, execute_query
+from m4.config import set_active_backend
 from note_ner import extract_cui_features, aggregate_features
 
-# Switch to notes dataset — must be separate from the hosp dataset
+# Switch backend AND dataset — notes live in BigQuery, not local DuckDB.
+# If you don't switch the backend first, execute_query will fail looking for
+# a local mimic_iv_note.duckdb file that doesn't exist.
+set_active_backend("bigquery")
 set_dataset("mimic-iv-note")
 notes_df = execute_query("""
     SELECT subject_id, note_id, text
@@ -140,6 +144,16 @@ cui_long = extract_cui_features(
 cui_wide = aggregate_features(cui_long, id_column="subject_id", feature_column="cui")
 mat_df = mat_df.join(cui_wide, how="left").fillna(0)
 print(f"mat_df with NLP: {mat_df.shape}")
+
+# Re-apply global sparse filter after joining CUI features.
+# CUI columns from NER are often sparser than PheCodes — columns with < MIN_NONZERO
+# patients will cause flexmix convergence failures ("Log-likelihood: NA") in MAP.
+# The anchor PheCode is always retained regardless of its count.
+nonzero = (mat_df > 0).sum()
+sparse = nonzero[(nonzero < MIN_NONZERO) & (nonzero.index != MAIN_PHECODE)].index
+if len(sparse):
+    mat_df = mat_df.drop(columns=sparse)
+    print(f"Dropped {len(sparse)} sparse CUI/modality features; mat_df now {mat_df.shape}")
 
 # For large corpora (>100k notes), save cui_long to parquet after the first run:
 # cui_long.to_parquet("cui_features_<disease>.parquet", index=False)
