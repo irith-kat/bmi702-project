@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from once import get_once_features
+from once import get_once_features, parse_once_by_modality
 
 
 # ---------------------------------------------------------------------------
@@ -18,10 +18,10 @@ def _write_codified(tmp_path: Path, rows: list[dict]) -> Path:
     return p
 
 
-def _write_narrative(tmp_path: Path, rows: list[dict]) -> Path:
+def _write_narrative(tmp_path: Path, rows: list[dict], sep="|") -> Path:
     df = pd.DataFrame(rows)
     p = tmp_path / "narrative.csv"
-    df.to_csv(p, sep="|", index=False)
+    df.to_csv(p, sep=sep, index=False)
     return p
 
 
@@ -110,3 +110,95 @@ def test_missing_narrative_file_raises(tmp_path):
     cod = _write_codified(tmp_path, CODIFIED_ROWS)
     with pytest.raises(FileNotFoundError):
         get_once_features(str(cod), str(tmp_path / "missing.csv"))
+
+
+# ---------------------------------------------------------------------------
+# Column normalization: comma-sep files and STR-column ONCE exports
+# ---------------------------------------------------------------------------
+
+
+def test_comma_separated_narrative_parsed(tmp_path):
+    """Narrative files with comma separator (some ONCE downloads) must be parsed."""
+    cod = _write_codified(tmp_path, CODIFIED_ROWS)
+    # Write as comma-separated with lowercase column names
+    nar_rows = [{"cui": "C0003873", "term": "rheumatoid arthritis"}]
+    nar = _write_narrative(tmp_path, nar_rows, sep=",")
+    result = get_once_features(str(cod), str(nar))
+    assert result["nlp_list"] == ["C0003873"]
+    assert len(result["nlp_target_cuis"]) == 1
+    assert result["nlp_target_cuis"][0] == {
+        "term": "rheumatoid arthritis",
+        "cui": "C0003873",
+    }
+
+
+def test_str_column_mapped_to_term(tmp_path):
+    """ONCE STR|CUI exports (e.g. hemorrhoids) should be handled via STR→TERM rename."""
+    cod = _write_codified(tmp_path, CODIFIED_ROWS)
+    nar_rows = [{"STR": "Hemorrhoids", "CUI": "C0019112"}]
+    nar = _write_narrative(tmp_path, nar_rows, sep="|")
+    result = get_once_features(str(cod), str(nar))
+    assert result["nlp_list"] == ["C0019112"]
+    assert len(result["nlp_target_cuis"]) == 1
+    assert result["nlp_target_cuis"][0] == {"term": "Hemorrhoids", "cui": "C0019112"}
+
+
+# ---------------------------------------------------------------------------
+# parse_once_by_modality
+# ---------------------------------------------------------------------------
+
+_MIXED_FEATURES = {
+    "codified_list": [
+        "PheCode:714.1",
+        "PheCode:401",
+        "RXNORM:614391",
+        "RXNORM:1049630",
+        "LNC:4548-4",
+        "CCS:3",
+        "ShortName:MCV",
+        "UnknownPrefix:XYZ",
+    ]
+}
+
+
+def test_parse_splits_phecodes():
+    result = parse_once_by_modality(_MIXED_FEATURES)
+    assert result["phecode"] == ["714.1", "401"]
+
+
+def test_parse_splits_rxnorm():
+    result = parse_once_by_modality(_MIXED_FEATURES)
+    assert result["rxnorm"] == ["614391", "1049630"]
+
+
+def test_parse_splits_loinc():
+    result = parse_once_by_modality(_MIXED_FEATURES)
+    assert result["loinc"] == ["4548-4"]
+
+
+def test_parse_splits_ccs():
+    result = parse_once_by_modality(_MIXED_FEATURES)
+    assert result["ccs"] == ["3"]
+
+
+def test_parse_splits_shortname():
+    result = parse_once_by_modality(_MIXED_FEATURES)
+    assert result["shortname"] == ["MCV"]
+
+
+def test_parse_unknown_prefix_goes_to_other():
+    result = parse_once_by_modality(_MIXED_FEATURES)
+    assert result["other"] == ["UnknownPrefix:XYZ"]
+
+
+def test_parse_empty_codified_list():
+    result = parse_once_by_modality({"codified_list": []})
+    assert all(len(v) == 0 for v in result.values())
+
+
+def test_parse_phecode_only_features():
+    features = {"codified_list": ["PheCode:455", "PheCode:578.8"]}
+    result = parse_once_by_modality(features)
+    assert result["phecode"] == ["455", "578.8"]
+    assert result["rxnorm"] == []
+    assert result["loinc"] == []
