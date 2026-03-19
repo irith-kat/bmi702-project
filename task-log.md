@@ -28,6 +28,8 @@ I decided that easy functions like pivoting datasets and things like this can be
 - Finish the literature review if Consensus.app provides the API key.
 - Develop an agent that acts as a medical revewer of notes, to increase number of gold labels (for example, looking for cancer progressions or other endpoints that are not codified).
 - Check if ToolUniverse can provide some tools or skills that are useful, as I saw that it has many many things.
+- A sub-agent that looks at the dataset in detail and writes a report about its characteristics, missingness, distributions of key variables, etc... to help the researcher and other agents understand the data they are working with.
+- A self-improval system in which the agent writes down learnings from previous iterations so it can improve over time. AutoResearchClaw has something like this.
 
 ### Out of scope
 - Citations/writing/formatiing papers. We focus on results.
