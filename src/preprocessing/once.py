@@ -1,5 +1,6 @@
-import pandas as pd
 import os
+
+import pandas as pd
 
 
 def get_once_features(codified_file: str, narrative_file: str):
@@ -55,9 +56,10 @@ def get_once_features(codified_file: str, narrative_file: str):
     if "CUI" in narrative_df.columns:
         nlp_list = narrative_df["CUI"].tolist()
         if "TERM" in narrative_df.columns:
+            valid = narrative_df[["TERM", "CUI"]].dropna()
             nlp_target_cuis = [
-                {"term": row["TERM"], "cui": row["CUI"]}
-                for _, row in narrative_df[["TERM", "CUI"]].dropna().iterrows()
+                {"term": term, "cui": cui}
+                for term, cui in zip(valid["TERM"], valid["CUI"])
             ]
 
     return {
