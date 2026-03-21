@@ -1,6 +1,6 @@
 ---
 name: mimic-note-preprocessing
-description: Extract CUI mentions from MIMIC-IV discharge notes using MedSpaCy and convert them to observation log rows. Use when adding NLP signal to the MAP pipeline or building a notes-based feature set.
+description: Extract CUI mentions from MIMIC-IV discharge notes using MedSpaCy and convert them to observation log rows. Use when adding NLP signal to a cohort pipeline or building a notes-based feature set.
 ---
 
 # MIMIC Notes Preprocessing
@@ -110,6 +110,6 @@ Observed rate: ~1.9 notes/sec on a single core (WSL2, `n_process=1`).
 | 12,000 (1/patient × 12K candidates) | ~1.75 hr |
 | 37,000 (3/patient × 12K candidates) | ~5 hr |
 
-## Effect on MAP
+## Effect on Cohort Identification
 
-Without NLP, MAP can only **reject** weak ICD cases (specificity gain). With NLP, MAP can also **find** patients under-coded in ICD (sensitivity gain). `map_only` cases in the comparison summary are the patients NLP adds.
+Without NLP, cohort identification relies solely on structured EHR codes (ICD, CPT, NDC), which may miss patients who are under-coded. Adding NLP CUI features improves **sensitivity** by surfacing patients mentioned in notes but lacking a formal diagnosis code.
