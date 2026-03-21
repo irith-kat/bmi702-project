@@ -59,20 +59,31 @@ print(f"Candidates: {len(candidate_ids)}")
 
 Discharge notes are in `mimic-iv-note` on BigQuery. Always filter to candidate
 patients in the SQL query — the full notes table is too large to pull wholesale.
-The `IN (...)` list approach is practical up to ~5K subjects; for larger sets
-use a temp table or `JOIN`, and work in batches if needed.
+
+**M4 token limit:** M4 enforces a 10k-token query limit. A plain `IN (...)` with
+7-digit subject IDs hits this limit at ~3,500 IDs. Always use batched queries:
 
 ```python
+import pandas as pd
+
 set_active_backend("bigquery")
 set_dataset("mimic-iv-note")
 
-subject_id_list = ", ".join(str(sid) for sid in sorted(candidate_ids))
-notes_df = execute_query(f"""
-    SELECT subject_id, text, charttime
-    FROM mimiciv_note.discharge
-    WHERE subject_id IN ({subject_id_list})
-""")
-notes_df = notes_df.dropna(subset=["text"])
+candidate_ids = sorted(candidate_ids)
+BATCH_SIZE = 400   # safe margin under the 10k token limit
+batches = [candidate_ids[i:i+BATCH_SIZE] for i in range(0, len(candidate_ids), BATCH_SIZE)]
+
+chunks = []
+for batch in batches:
+    id_list = ", ".join(str(sid) for sid in batch)
+    chunk = execute_query(f"""
+        SELECT subject_id, text, charttime
+        FROM mimiciv_note.discharge
+        WHERE subject_id IN ({id_list})
+    """)
+    chunks.append(chunk)
+
+notes_df = pd.concat(chunks, ignore_index=True).dropna(subset=["text"])
 print(f"Notes fetched: {len(notes_df)} ({notes_df['subject_id'].nunique()} patients)")
 ```
 
@@ -98,16 +109,20 @@ nlp_obs = notes_to_events(
 |---|---|---|
 | `max_note_chars` | None | Truncate each note before NLP. `10_000` covers PMH + meds (~86% of avg MIMIC note). Speeds up MedSpaCy ~4–6×. |
 | `notes_per_patient` | None | Keep N most recent notes per patient. Use to ensure all candidates get coverage instead of a flat total cap. `3` is a good starting point. |
-| `n_process` | 1 | Workers for `nlp.pipe()`. Keep at 1 in Jupyter to avoid deadlocks. |
+| `n_process` | 1 | Workers for `nlp.pipe()`. **In scripts**, use `os.cpu_count()` for a 4–8× speedup. Keep at 1 in Jupyter notebooks (fork-based multiprocessing deadlocks). |
+| `batch_size` | 256 | Texts buffered per spaCy batch. 256 is a good default; no recall impact. |
 
 ## Runtime Estimates (MIMIC-IV, `max_note_chars=10_000`)
 
+Observed rate: ~1.9 notes/sec on a single core (WSL2, `n_process=1`).
+
 | Notes | Approx time |
 |---|---|
-| 300 | ~1 min |
-| 3,000 (1/patient × 3K candidates) | ~10 min |
-| 12,000 (1/patient × 12K candidates) | ~40 min |
-| 37,000 (3/patient × 12K candidates) | ~2 hr |
+| 300 | ~3 min |
+| 2,600 (1/patient × 2.6K candidates) | ~23 min |
+| 5,100 (3/patient × 2.6K candidates) | ~45 min |
+| 12,000 (1/patient × 12K candidates) | ~1.75 hr |
+| 37,000 (3/patient × 12K candidates) | ~5 hr |
 
 ## Effect on MAP
 
