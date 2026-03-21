@@ -5,13 +5,13 @@ description: Start a structured clinical research session. Use when users descri
 
 # Clinical Research Workflow
 
-Structured clinical research from hypothesis through analysis. All work is organized as a **study** — one research question, one output directory, spanning one or more conversations.
+Structured cohort building and phenotyping from research question through characterization. All work is organized as a **study** — one research question, one output directory, spanning one or more conversations.
 
 ## When This Skill Activates
 
 - User invokes `/research` command
-- User describes research intent: "I want to study...", "Can we analyze...", "What's the mortality rate for..."
-- User mentions cohort analysis, hypothesis testing, or comparative studies
+- User describes research intent: "I want to study...", "Can we analyze...", "Find patients with..."
+- User mentions cohort analysis, phenotyping, cohort characterization, or disease identification
 
 ## Study Setup
 
@@ -20,7 +20,7 @@ Every research session is organized as a **study**. Set the study identifier at 
 ```python
 from pathlib import Path
 
-STUDY = "early-vasopressors-sepsis-v1"
+STUDY = "hemorrhoids-cohort-v1"
 output_dir = Path("output") / STUDY
 (output_dir / "scripts").mkdir(parents=True, exist_ok=True)
 (output_dir / "data").mkdir(parents=True, exist_ok=True)
@@ -33,33 +33,32 @@ output_dir = Path("output") / STUDY
 
 ### Output Structure
 
-Scripts ARE the science. Create this structure at study start:
+Scripts ARE the science. Create this folder structure at study start:
 
 ```
 output/{study}/
 ├── PROTOCOL.md
-├── RESULTS.md
 ├── scripts/
-│   ├── 01_cohort_definition.py
-│   ├── 02_baseline_characteristics.py
-│   ├── 03_outcome_analysis.py
-│   └── ...
+│   ├── 01_cohort_definition.py      ← suggested; name freely
+│   ├── 02_feature_matrix.py
+│   ├── 03_map_phenotyping.py
+│   └── 04_characterization.py
 ├── data/
 │   ├── cohort.parquet
-│   ├── baseline_table.parquet
 │   └── ...
 └── plots/
     ├── age_distribution.json
-    ├── kaplan_meier.json
     └── ...
 ```
+
+Script names should follow the pattern (`NN_name.py`). Name scripts to reflect their purpose. The constraint is that scripts must be self-contained and independent — each loads what it needs from `data/`.
 
 ### Script-First Workflow
 
 Every analysis step that produces a result MUST be executed from a stored script. The script IS the analysis — not a retrospective summary of interactive work.
 
 **The pattern — for every analysis step:**
-1. **Write** the script to `scripts/NN_name.py`
+1. **Write** the script to `scripts/`
 2. **Run** it — outputs (parquets, JSON plots) land in `data/` and `plots/`
 3. **Report** results by loading and summarizing the script's outputs in the terminal
 
@@ -71,39 +70,6 @@ Interactive exploration (checking schemas, small test queries to understand data
 - **Saves outputs**: `.parquet` to `data/`, Plotly figures as `.json` to `plots/` via `fig.write_json()` (never `.html` or `.png`)
 - **Plotly reload**: `plotly.io.from_json(open("plots/fig.json").read())` to reconstruct a `Figure` from disk
 - **Independent**: each script runs on its own; later scripts load earlier outputs from `data/`
-
-**Example — one analysis step, start to finish:**
-
-```python
-# 1. Write the script
-(output_dir / "scripts" / "01_cohort_definition.py").write_text('''\
-"""01 — Define sepsis cohort from MIMIC-IV."""
-from pathlib import Path
-from m4 import execute_query, set_dataset
-
-set_dataset("mimic-iv")
-out = Path(__file__).resolve().parent.parent
-
-sql = """
-SELECT s.stay_id, s.subject_id, i.admission_age,
-       a.hospital_expire_flag
-FROM mimiciv_derived.sepsis3 s
-INNER JOIN mimiciv_derived.icustay_detail i ON s.stay_id = i.stay_id
-INNER JOIN mimiciv_hosp.admissions a ON s.hadm_id = a.hadm_id
-WHERE i.first_icu_stay = true AND i.admission_age >= 18
-"""
-cohort = execute_query(sql)
-cohort.to_parquet(out / "data" / "cohort.parquet")
-print(f"Cohort: {len(cohort)} patients")
-''')
-
-# 2. Run it (via Bash tool)
-
-# 3. Report results in terminal
-import pandas as pd
-cohort = pd.read_parquet(output_dir / "data" / "cohort.parquet")
-print(cohort.describe())
-```
 
 ---
 
@@ -120,63 +86,46 @@ Collect study parameters through structured terminal conversation. The interview
 
 Use `AskUserQuestion` to collect structured answers. Compose from these standard questions, and add custom ones as needed:
 
-**Research question type:**
-- Association study (Is variable X associated with outcome Y?)
-- Prediction model (Can we predict outcome Y from variables X?)
-- Cohort characterization (What are the characteristics of population P?)
-- Exploratory / hypothesis-generating
+**Target phenotype / disease:**
+- What condition or phenotype are you trying to identify?
+- Is there a pre-existing ICD or PheCode to anchor on? If unknown, a lookup can help.
+- Are ONCE files available? If not, refer the user to https://shiny.parse-health.org/ONCE/ to generate codified and narrative feature files and place them in `input/`.
 
-**Study design:**
-- Descriptive — characterize a cohort
-- Comparative — compare groups (treatment vs control)
-- Predictive — build or validate a model
-- Exploratory — clustering, pattern discovery
+**Phenotyping method:**
+- MAP (algorithmic, requires ONCE files) — best when ONCE files are available and high precision matters
+- Rule-based ICD filter — appropriate when the ICD code set is well-validated or the cohort is simple
+- See `phenotyping-strategy` skill to choose between these
 
-**Primary outcome:**
-- In-hospital mortality (`hospital_expire_flag`)
-- 28-day or 90-day mortality (`dod` relative to admission)
-- ICU length of stay (`los` in `icustays` — survivor bias risk)
-- Hospital length of stay (`dischtime` minus `admittime`)
-- Ventilator-free days (28 minus days on MV)
-- AKI incidence (KDIGO stage 2+ after exposure window)
-
-**Exposure / intervention:**
-- Treatment timing (early vs late initiation)
-- Treatment dose / intensity (high vs low)
-- Treatment received vs not (binary, any use within a window)
-- Severity score / biomarker (continuous or categorical)
-- None (descriptive study)
-
-**Base population:**
-- If there is any pre-defined population (e.g., sepsis, AKI, heart failure), identify it here. If not, MAP phenotyping will be used to identify the disease cohort from the full population.
-
-**Exclusion criteria** (multiple allowed):
-- First ICU stay only
-- Age < 18
-- ICU stay < 24h
-- Early death within N hours of admission
-- Missing key variables
-
-**Confounders** (multiple allowed):
-- Age, sex
-- Illness severity (SOFA, APACHE III, SAPS-II)
-- Charlson / Elixhauser comorbidities
-- Admission type (medical vs surgical)
-- Baseline labs (lactate, creatinine, bilirubin)
-- Mechanical ventilation at baseline
+**Scope of the session:**
+- Cohort identification only (who has the condition?)
+- Cohort identification + characterization (who has it, and what do they look like?)
+- Downstream analysis planned? (flag for a future session, not this one)
 
 **Dataset:**
 - `mimic-iv` (full)
-- `mimic-iv-demo` (100 patients, for testing)
-- `eicu` (multi-center)
+- `mimic-iv-demo` (100 patients, for testing/development)
+
+**NLP / notes:**
+- Should clinical notes be used for NLP CUI features? (improves MAP sensitivity; requires BigQuery access and extra runtime — see `mimic-note-preprocessing`)
+- If unsure: recommend yes for MAP, since NLP adds patients ICD missed
+
+**Exclusion criteria** (multiple allowed):
+- Age < 18
+- Missing key variables
+- Specific admission types to exclude
+
+**Characterization goals** (if cohort characterization is in scope):
+- Demographics (age, sex, race)
+- Comorbidities (top ICD clusters, Charlson/Elixhauser)
+- Top ONCE features present in cases vs controls
+- Temporal patterns (admission trends, seasonality)
 
 ### After the Interview
 
 Review answers in the terminal. Key refinements to consider:
-- **Research question** — Make specific and answerable: "Are sicker patients dying more?" → "Is day-1 SOFA independently associated with 30-day mortality in sepsis?"
-- **Outcome** — Confirm operationalization (table/column, survivor bias for LOS, follow-up window for X-free days)
-- **Exposure** — Nail down time window, comparator, and immortal time bias risk
-- **Confounders** — Check for mediators on the causal path (should NOT be adjusted for); consider propensity scores for treatment comparisons
+- **Anchor PheCode** — Identify it from the ONCE codified file (`target_similarity == 1.0`); confirm it exists before proceeding
+- **Dataset** — Recommend demo for first runs; switch to full MIMIC-IV once the pipeline validates
+- **NLP decision** — If notes are being used, confirm BigQuery access before committing to that path
 
 ---
 
@@ -188,25 +137,30 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 ## Research Protocol: [Title]
 
 ### Research Question
-[Specific, answerable question]
+[Specific, answerable question — e.g. "Identify and characterize patients with hemorrhoids in MIMIC-IV using MAP phenotyping"]
 
 ### Study Design
-[Descriptive/Comparative/Predictive/Exploratory/...]
+[Cohort identification / Cohort identification + characterization]
 
 ### Population
+**Source:** [MIMIC-IV full / demo]
+**Anchor phenotype:** [PheCode + disease name]
 **Inclusion:** [criteria]
 **Exclusion:** [criteria with rationale]
 
-### Variables (adapt the section as suitable for the study)
-**Primary Outcome:** [definition and measurement]
-**Exposure:** [definition and timing]
-**Covariates:** [list with definitions]
+### Phenotyping Approach
+**Method:** [MAP / rule-based ICD filter]
+**ONCE files:** [codified file name, narrative file name, or N/A]
+**NLP:** [Yes — BigQuery notes / No — structured EHR only]
+**Anchor PheCode:** [e.g. 455 — Hemorrhoids]
 
-### Analysis Plan
-1. [Step with rationale]
-2. ...
+### Characterization Plan
+1. [Demographics — age distribution, sex, race]
+2. [Top comorbidities]
+3. [Top ONCE features in cases vs controls]
+4. [Other planned summaries]
 
-### Potential Biases & Limitations
+### Potential Limitations
 - [Known limitation]
 
 ### Skills to Use
@@ -221,37 +175,28 @@ Apply throughout the analysis.
 
 ### Bias Prevention
 
-**Immortal Time Bias**
-- Define exposure at a FIXED time point (admission, 24h, 48h)
-- Never use "ever received during stay" for treatments
-- Use landmark analysis when appropriate
-
 **Selection Bias**
-- Report all exclusions with counts (CONSORT flow)
-- Analyze whether excluded patients differ systematically
-- Avoid conditioning on post-treatment variables
+- Report all exclusions with counts (CONSORT flow) — how many patients entered, how many excluded at each step, how many remain
+- If patients are excluded for missing data, check whether they differ from included patients (age, sex, severity)
+- Avoid conditioning on post-phenotyping variables when building the case/control split
 
-**Information Leakage**
-- ICD codes are assigned at DISCHARGE — don't use for admission predictions
-- Length of stay is only known at discharge
-- Labs/vitals must be timestamped appropriately
-
-**Confounding by Indication**
-- Treatments are given to sicker patients
-- Always adjust for severity (SOFA, APACHE, SAPS)
-- Consider propensity scores for treatment comparisons
+**Information Leakage (ICD codes)**
+- ICD codes in MIMIC-IV are assigned at **discharge**, not admission — they reflect the full stay
+- This is generally fine for phenotyping (you want the discharge diagnosis), but flag it if downstream analysis requires admission-time features
+- Do not use ICD codes to define the anchor phenotype AND as features simultaneously without acknowledging circularity
 
 ### Statistical Rigor
 
-- Pre-specify primary outcome; apply Bonferroni/FDR for secondary analyses
-- Report cohort sizes at each step; be cautious with small subgroups
-- Report missingness; consider imputation vs complete case; perform sensitivity analyses
+- Report cohort sizes at each pipeline step (raw → after exclusions → after MAP threshold)
+- Report MAP score distribution — not just final case/control counts
+- Report feature sparsity before and after `min_nonzero` filtering
+- Be cautious with small subgroups; suppress characterization tables for cells n < 5
 
 ### Visualizations
 
 Use plots liberally — a chart often reveals what a table hides.
 
-**Distributions → Plotly figures, not raw tables.** Categorical variables (race, gender, admission type) → horizontal bar chart. Continuous variables (age, LOS, SOFA) → histogram. Reserve tabular summaries for small counts (n, median, IQR).
+**Distributions → Plotly figures, not raw tables.** Categorical variables (race, gender, admission type) → horizontal bar chart. Continuous variables (age, LOS, MAP score) → histogram. Reserve tabular summaries for small counts (n, median, IQR).
 
 **Every plot must have an explanation.** When reporting a figure to the researcher, always include a 1–4 sentence interpretation: what the plot shows and why it matters.
 
@@ -263,13 +208,13 @@ import plotly.io as pio
 fig = pio.from_json(open(output_dir / "plots" / "age_distribution.json").read())
 ```
 
-Preferred plot types: Kaplan-Meier for survival, forest plots for effect sizes, covariate balance after matching, CONSORT flow diagrams.
+Preferred plot types for cohort characterization: MAP score distribution (histogram), CONSORT flow (annotated diagram or table), demographic bar charts, feature prevalence comparison (cases vs controls).
 
 ### Reproducibility
 
 - **Write → run → report.** Never report results from throwaway interactive code.
 - **Iterate on scripts, not inline.** If a step needs fixing, edit the script and re-run.
-- **Later scripts read earlier outputs.** Step 03 loads `data/cohort.parquet` from step 01 — not by re-running the query.
+- **Later scripts read earlier outputs.** The characterization script loads `data/cohort.parquet` from the cohort definition script — not by re-running the query.
 
 ---
 
@@ -281,115 +226,86 @@ When the goal is to identify patients with a specific disease from EHR data, inv
 
 | Step | Skill | What it does | Input | Output |
 |------|-------|-------------|-------|--------|
-| 1 | `preprocessing-strategy` | Parse ONCE files; roll up ICD→PheCode, CPT→CCS, etc. | Raw EHR tables (diagnoses, procedures, labs, prescriptions) | Per-modality DataFrames (phecode_df, ccs_df, …) |
-| 2 | `build-datamart` | Pivot modality DataFrames + NLP CUI extraction into unified patient × feature matrix | Modality DataFrames + ONCE features + discharge notes | `mat_df`, `note_df` |
-| 3 | `map-phenotyping` | Run MAP mixture model → per-patient probability scores + binary case/control labels | `mat_df`, `note_df`, anchor PheCode | `map_results` with `score` and `phenotype` columns |
+| 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables (diagnoses, procedures, prescriptions) | `obs_log` (long-format observation log) |
+| 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes from BigQuery | `obs_log` extended with `event_type="cui"` rows |
+| 3 | `map-phenotyping` | Run MAP mixture model → per-patient probability scores + binary case/control labels | `obs_log`, ONCE features, anchor PheCode | `map_results` with `score` and `phenotype` columns |
 
-**Trigger rule:** If the user mentions ONCE files, MAP phenotyping, or wants to identify patients with a disease condition, always start with `preprocessing-strategy` before touching any feature matrix code. If the ONCE files are not present, refer the user to https://shiny.parse-health.org/ONCE/ and make him download the NLP dictionary and the codified features, and place them in the repo root. Recommend applying a filter to phenotyping_features = True to reduce noise in the selection.
+**Trigger rule:** If the user mentions ONCE files, MAP phenotyping, or wants to identify patients with a disease condition, always confirm ONCE files exist before writing feature-matrix code. If ONCE files are not present, refer the user to https://shiny.parse-health.org/ONCE/ to generate codified and narrative feature files. Recommend enabling the `phenotyping_features = True` filter in ONCE to reduce noise.
 
-**Script naming convention for phenotyping:**
-```
-01_cohort_definition.py    ← pull raw EHR tables (m4-api)
-02_feature_matrix.py       ← preprocessing-strategy + build-datamart
-03_map_phenotyping.py      ← map-phenotyping
-04_characterization.py     ← describe the identified cohort
-```
-
-**Critical: backend switching for notes**
-
-Tabular EHR data (diagnoses, admissions, etc.) uses the DuckDB backend; clinical notes use BigQuery. Always switch backends explicitly when crossing data sources:
-
-```python
-from m4.config import set_active_backend
-from m4 import set_dataset
-
-# Tabular EHR (local DuckDB)
-set_active_backend("duckdb")
-set_dataset("mimic-iv-demo")  # or "mimic-iv"
-
-# ... query diagnoses, procedures, etc. ...
-
-# Switch to BigQuery for clinical notes
-set_active_backend("bigquery")
-set_dataset("mimic-iv-note")
-
-# ... fetch discharge summaries, run NER ...
-```
-
-**min_nonzero guidance:** Always apply a global sparsity filter to ALL mat_df columns before running MAP — not just PheCodes. MAP's flexmix EM crashes ("Log-likelihood: NA") on any column with too few non-zero patients, regardless of dataset size. Sparsity is driven by term rarity, not cohort size: even in full MIMIC-IV, device codes or highly specific exam findings from the ONCE NLP dictionary may appear in <20 patients. Use `min_nonzero=20` (default) for full datasets, `5` for demo/pilot runs. The anchor PheCode is always retained.
+**min_nonzero guidance:** Always apply a global sparsity filter to ALL `mat_df` columns before running MAP — not just PheCodes. MAP's flexmix EM crashes ("Log-likelihood: NA") on any column with too few non-zero patients, regardless of dataset size. Sparsity is driven by term rarity: even in full MIMIC-IV, device codes or highly specific ONCE NLP features may appear in <20 patients. Use `min_nonzero=20` (default) for full datasets, `5` for demo/pilot runs. The anchor PheCode is always retained.
 
 ### Data & Methodology
 | Skill | When to Use |
 |-------|-------------|
-| `m4-api` | Multi-step analysis, statistical tests |
-| `mimic-table-relationships` | Understanding joins |
+| `m4-api` | Writing SQL queries, multi-step data access |
+| `mimic-table-relationships` | Understanding joins, avoiding duplicates |
+| `phenotyping-strategy` | Deciding between MAP and rule-based filtering |
+
 ---
 
-## Example Flows
+## Example Flow
 
-### Phenotyping study
+### Hemorrhoid cohort identification and characterization
 
-**User:** "Find all patients with hemorrhoids using the ONCE files and MAP"
+**User:** "Find all patients with hemorrhoids using the ONCE files and MAP, then characterize the cohort"
 
-**What you already know:** disease = hemorrhoids, method = MAP phenotyping, ONCE files present. Skip most interview questions; ask only about dataset and goal (identification only vs. characterization).
+**What you already know:** disease = hemorrhoids, method = MAP, ONCE files present, goal = identification + characterization. Skip most interview questions.
+
+**Interview (ask in one batch):**
+- Which dataset — `mimic-iv` or `mimic-iv-demo` for development?
+- Should clinical notes (BigQuery) be used for NLP CUI features?
+- Any exclusion criteria (e.g. age < 18)?
 
 **After response:**
-- Confirm ONCE codified and narrative files exist in the repo root (glob `ONCE_*.csv`)
-- Identify anchor PheCode from the codified file (`target_similarity == 1.0`)
-- Note whether notes are needed (always yes for MAP — CUIs improve recall)
+- Glob for ONCE files in `input/` — confirm codified and narrative files exist
+- Identify anchor PheCode from the codified file (`target_similarity == 1.0`) — expected `455` for hemorrhoids
+- Note NLP decision; if yes, confirm BigQuery access before proceeding
 
-**Protocol → approval → execute (4 scripts):**
+**Draft protocol → show to researcher → wait for approval**
+
+**Execute — four suggested scripts:**
+
 ```
-01_cohort_definition.py     ← m4-api: pull subjects, diagnoses, procedures (DuckDB)
-02_feature_matrix.py        ← preprocessing-strategy + build-datamart:
-                               rollup ICD→PheCode, fetch notes (BigQuery), NER, assemble mat_df + note_df
-03_map_phenotyping.py       ← map-phenotyping: run MAP, apply threshold, save scored cohort
-04_characterization.py      ← describe cases: demographics, comorbidities, top features
+cohort_definition.py     ← m4-api (DuckDB): pull subjects, diagnoses_icd, procedures,
+                            prescriptions from MIMIC-IV; build obs_log with mimic-preprocessing
+
+feature_matrix.py        ← mimic-note-preprocessing: filter obs_log to candidates,
+                            fetch notes from BigQuery, run NER, append CUI events;
+                            then map-phenotyping: preprocess_map → mat_df + note_df
+
+map_phenotyping.py       ← map-phenotyping: run_map → scored cohort; apply threshold;
+                            report MAP score distribution (histogram); save cohort.parquet
+
+characterization.py      ← describe cases: age histogram, sex/race bar charts,
+                            top-10 comorbidities, top ONCE features cases vs controls
 ```
 
 **Key checks before MAP:**
 - Apply global sparsity filter (`min_nonzero`) to ALL columns after joining NLP features, not just PheCodes
-- Verify anchor PheCode column exists in mat_df (bare string, e.g. `"455"`, not `"PheCode:455"`)
-- Verify note_df has no zero values
+- Verify anchor PheCode column exists in `mat_df` (bare string, e.g. `"455"`, not `"PheCode:455"`)
+- Verify `note_df` has no zero values
 
----
-
-### Comparative/outcomes study
-
-**User:** "I want to study if early vasopressor use affects mortality in sepsis"
-
-**What you already know:** comparative design, sepsis population, vasopressor exposure, mortality-related. Skip those questions.
-
-**Interview:** Ask only what's missing — outcome definition (28-day vs in-hospital), "early" window, exclusion criteria, dataset. Ask all at once.
-
-**After response, refine in terminal:**
-- Anchor the time window to suspected infection onset (`suspicion-of-infection` skill), not ICU admission
-- Recommend excluding death within the exposure window to avoid immortal time bias
-- For treatment comparison, suggest propensity score matching over simple regression
-
-**Protocol → approval → execute:**
-- Save protocol to `output_dir / "PROTOCOL.md"`, present to researcher and wait for approval
-- Each phase = write `scripts/NN_name.py` → run → report from `data/` and `plots/` outputs
-- Ask for approval at decision points (cohort size, variable definitions, analysis method)
-- Save final `RESULTS.md` and summarize findings
+**After MAP runs:**
+- Report CONSORT flow: total subjects → candidates (≥1 ONCE codified event) → MAP cases → MAP controls
+- Report MAP score distribution — show the bimodal shape if present (cases cluster near 1, controls near 0)
+- Compare top features between cases (`phenotype=1`) and controls (`phenotype=0`) — feature prevalence bar chart
 
 ---
 
 ## Red Flags
 
 Stop and reconsider if you see:
-- **"Patients who survived to receive..."** → Immortal time bias
-- **"Using ICD codes to identify patients at admission"** → Information leakage
-- **"Complete cases only (N drops from X to Y)"** → Selection bias risk
-- **"Treatment group had higher mortality"** → Confounding by indication
-- **"47 significant associations"** → Multiple comparisons
-- **"Small sample size but p < 0.05"** → Likely false positive
+- **"Using ICD codes to identify patients at admission"** → ICD codes are assigned at discharge in MIMIC-IV; flag circularity or timing issues
+- **"Complete cases only (N drops from X to Y)"** → Selection bias risk; check if excluded patients differ
+- **"47 significant associations"** → Multiple comparisons; apply FDR correction
+- **"Small sample (n=12) but p < 0.05"** → Likely false positive; report with caution
+- **MAP returns NA log-likelihood** → Sparsity problem; lower `min_nonzero` or remove sparse columns
 
 ---
 
 ## After Completion
 
-1. Save `RESULTS.md` to `output_dir` with findings, effect sizes, and confidence intervals
+1. Save a brief `RESULTS.md` to `output_dir` with: cohort size, MAP score summary, key characterization findings
 2. Summarize key findings in the terminal
-3. Acknowledge limitations explicitly — include a limitations section in `RESULTS.md`
-4. Suggest validation on independent data (e.g., eICU if MIMIC was used)
+3. Acknowledge limitations — especially ICD coverage gaps and NLP sensitivity/specificity tradeoffs
+4. If downstream analysis is planned, suggest it as a new study version (`v2`) or a separate session
