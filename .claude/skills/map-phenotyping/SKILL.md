@@ -27,15 +27,15 @@ run_map()                    ← scores + phenotype labels
 
 ## Step 1 — Load ONCE Features
 
-ONCE feature files are **user-provided** and already present in `src/`. Find them with glob — do not generate or download them.
+ONCE feature files are **user-provided** and should be placed in `input/`. Find them with glob — do not generate or download them.
 
 ```python
 import glob
 from once import get_once_features
 
 # ONCE files follow naming conventions — discover them rather than hardcoding
-codified_files  = glob.glob("src/ONCE_*PheCode*.csv")   # codified features
-narrative_files = glob.glob("src/ONCE_*_C[0-9]*.csv")  # narrative/CUI features
+codified_files  = glob.glob("input/ONCE_*PheCode*.csv")   # codified features
+narrative_files = glob.glob("input/ONCE_*_C[0-9]*.csv")  # narrative/CUI features
 
 once_features = get_once_features(codified_files[0], narrative_files[0])
 # Keys used by MAP:
