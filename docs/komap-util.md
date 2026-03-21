@@ -40,12 +40,12 @@
      - Predicted disease scores
      - Predicted disease probabilities
      - Predicted disease labels (using gaussian mixture model)
-    ```    
+    ```
     codify.feature <- codify_RA$Variable[codify_RA$high_confidence_level == 1]
     nlp.feature <- cui_RA$cui[cui_RA$high_confidence_level == 1]
     input.cov.train <- cov_RA_train_long
     input.cov.valid <- cov_RA_valid_long
-    
+
     target.code <- 'PheCode:714.1'
     target.cui <- 'C0003873'
     nm.corrupt.code <- 'corrupt_mainICD'
@@ -55,10 +55,10 @@
     nm.id <- 'patient_num'
     nm.y <- 'Y'
     dat.part <- dat_part
-    
-    out <- KOMAP_corrupt(input.cov.train, input.cov.valid, is.wide = TRUE, target.code, target.cui, 
-                       nm.disease = 'RA', nm.utl, nm.multi = NULL, nm.corrupt.code = nm.corrupt.code, 
-                       nm.corrupt.cui = nm.corrupt.cui, dict_RA, 
+
+    out <- KOMAP_corrupt(input.cov.train, input.cov.valid, is.wide = TRUE, target.code, target.cui,
+                       nm.disease = 'RA', nm.utl, nm.multi = NULL, nm.corrupt.code = nm.corrupt.code,
+                       nm.corrupt.cui = nm.corrupt.cui, dict_RA,
                        codify.feature = codify.feature, nlp.feature = nlp.feature,
                        pred = TRUE, eval.real = FALSE, eval.sim = FALSE,
                        dat.part = dat.part, nm.id = nm.id)
