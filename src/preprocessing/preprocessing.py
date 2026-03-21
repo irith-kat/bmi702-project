@@ -32,7 +32,7 @@ datetime + event_type).
 
 import pandas as pd
 from note_ner import extract_cui_features
-from rollup import rollup_icd_to_phecode, rollup_cpt_to_ccs
+from rollup import rollup_icd_to_phecode, rollup_cpt_to_ccs, rollup_ndc_to_ingredient
 
 
 # icd_to_events
@@ -79,39 +79,57 @@ def icd_to_events(
     )
 
 
-# rxnorm_to_events
-# ----------------
-# Format RxNorm prescription records into observation log rows.
-# No rollup is applied; codes are used as-is at the RxNorm concept level.
-# Call rollup_rxnorm_to_ingredient() from rollup.py first if ingredient-level
-# aggregation is needed before passing the table here.
+# drug_to_events
+# --------------
+# Roll up NDC codes to RxNorm ingredient level and return observation log rows.
+# Internally calls rollup_ndc_to_ingredient() from rollup.py; no pre-processing
+# of the prescriptions table is required before calling this function.
+#
+# Filter to drug_type == 'MAIN' before passing to avoid double-counting
+# multi-component drugs (MIMIC rows also contain BASE and ADDITIVE entries).
 #
 # Args:
-#   df          (pd.DataFrame) : Prescriptions table. Must contain subject_col,
-#                                rxnorm_col, and date_col.
-#                                Example: MIMIC-IV prescriptions table.
-#   rxnorm_col  (str)          : Column of RxNorm concept IDs.
-#                                Example: "drug_rxnorm"
-#   date_col    (str)          : Column of prescription start dates.
-#                                Example: "starttime"
-#   subject_col (str)          : Patient ID column. Default: "subject_id"
+#   df                     (pd.DataFrame) : Prescriptions table. Must contain
+#                                           subject_col, ndc_col, and date_col.
+#                                           Example: MIMIC-IV prescriptions.
+#   ndc_col                (str)          : Column of 11-digit NDC strings.
+#                                           Example: "ndc"
+#   date_col               (str)          : Column of prescription start dates.
+#                                           Example: "starttime"
+#   subject_col            (str)          : Patient ID column. Default: "subject_id"
+#   drug_col               (str | None)   : Optional free-text drug name column used
+#                                           as a case-insensitive fallback when NDC
+#                                           lookup fails (via gcpt_drug_ndc mapping).
+#                                           Example: "drug". Default: None
+#   ndc_mapping_file       (str)          : Path to ndc_to_rxnorm_ingredient.csv.
+#   drug_name_mapping_file (str)          : Path to drug_name_to_rxnorm_ingredient.csv.
 #
 # Returns:
 #   pd.DataFrame : Observation log rows with columns
 #                  [subject_col, "event_type", "event", "value", "datetime"].
-#                  Rows with null RxNorm codes are dropped.
+#                  Rows where neither NDC nor drug-name lookup resolves are dropped.
 #                  event_type: "rxnorm"
-#                  event format: "RXNORM:<code>"  e.g. "RXNORM:1049630"
+#                  event format: "RXNORM:<ingredient_id>"  e.g. "RXNORM:956874"
 #                  value: None (medication presence is categorical)
-def rxnorm_to_events(
+def drug_to_events(
     df: pd.DataFrame,
-    rxnorm_col: str,
+    ndc_col: str,
     date_col: str,
     subject_col: str = "subject_id",
+    drug_col: str | None = None,
+    ndc_mapping_file: str = "mapping_dicts/ndc_to_rxnorm_ingredient.csv",
+    drug_name_mapping_file: str = "mapping_dicts/drug_name_to_rxnorm_ingredient.csv",
 ) -> pd.DataFrame:
-    events = df.dropna(subset=[rxnorm_col]).copy()
+    rolled = rollup_ndc_to_ingredient(
+        df,
+        ndc_column=ndc_col,
+        drug_column=drug_col,
+        ndc_mapping_file=ndc_mapping_file,
+        drug_name_mapping_file=drug_name_mapping_file,
+    )
+    events = rolled.dropna(subset=["rxnorm_ingredient_id"]).copy()
     events["event_type"] = "rxnorm"
-    events["event"] = "RXNORM:" + events[rxnorm_col].astype(str)
+    events["event"] = "RXNORM:" + events["rxnorm_ingredient_id"].astype(str)
     events["value"] = None
     return (
         events[[subject_col, "event_type", "event", "value", date_col]]
@@ -244,12 +262,17 @@ def notes_to_events(
 #   icd_date_col    (str | None)          : Date column in icd_df.
 #                                           Example: "admittime"
 #
-#   rxnorm_df       (pd.DataFrame | None) : Prescriptions table.
-#                                           Requires rxnorm_col and rxnorm_date_col.
-#   rxnorm_col      (str | None)          : RxNorm code column.
-#                                           Example: "drug_rxnorm"
-#   rxnorm_date_col (str | None)          : Date column in rxnorm_df.
-#                                           Example: "starttime"
+#   drug_df                (pd.DataFrame | None) : Prescriptions table.
+#                                                  Requires drug_ndc_col and drug_date_col.
+#                                                  Filter to drug_type == 'MAIN' before passing.
+#   drug_ndc_col           (str | None)          : 11-digit NDC column.
+#                                                  Example: "ndc"
+#   drug_date_col          (str | None)          : Date column in drug_df.
+#                                                  Example: "starttime"
+#   drug_col               (str | None)          : Optional free-text drug name column for
+#                                                  fallback NDC lookup. Example: "drug"
+#   ndc_mapping_file       (str)                 : Path to ndc_to_rxnorm_ingredient.csv.
+#   drug_name_mapping_file (str)                 : Path to drug_name_to_rxnorm_ingredient.csv.
 #
 #   cpt_df          (pd.DataFrame | None) : Procedures table for CPT → CCS rollup.
 #                                           Requires cpt_col and cpt_date_col.
@@ -280,6 +303,7 @@ def notes_to_events(
 #                  - subject_col  (int | str)    : patient identifier
 #                  - "event_type" (str)           : modality label — "phecode", "rxnorm",
 #                                                  "ccs", or "cui"
+#                                                  (prescriptions always emit "rxnorm")
 #                  - "event"      (str)           : prefixed code, e.g. "PheCode:714.1"
 #                  - "value"      (float | None)  : numeric result; None for categorical
 #                                                  events; populated for future lab events
@@ -288,9 +312,10 @@ def build_obs_log(
     icd_df: pd.DataFrame | None = None,
     icd_col: str | None = None,
     icd_date_col: str | None = None,
-    rxnorm_df: pd.DataFrame | None = None,
-    rxnorm_col: str | None = None,
-    rxnorm_date_col: str | None = None,
+    drug_df: pd.DataFrame | None = None,
+    drug_ndc_col: str | None = None,
+    drug_date_col: str | None = None,
+    drug_col: str | None = None,
     cpt_df: pd.DataFrame | None = None,
     cpt_col: str | None = None,
     cpt_date_col: str | None = None,
@@ -301,6 +326,8 @@ def build_obs_log(
     subject_col: str = "subject_id",
     icd_mapping_file: str = "Phecode_map_v1_2_icd9_icd10cm.csv",
     cpt_mapping_file: str = "CCS_Services_Procedures_v2025-1.csv",
+    ndc_mapping_file: str = "mapping_dicts/ndc_to_rxnorm_ingredient.csv",
+    drug_name_mapping_file: str = "mapping_dicts/drug_name_to_rxnorm_ingredient.csv",
     max_note_chars: int | None = None,
     notes_per_patient: int | None = None,
     n_process: int = 1,
@@ -316,13 +343,21 @@ def build_obs_log(
             icd_to_events(icd_df, icd_col, icd_date_col, subject_col, icd_mapping_file)
         )
 
-    if rxnorm_df is not None:
-        if rxnorm_col is None or rxnorm_date_col is None:
+    if drug_df is not None:
+        if drug_ndc_col is None or drug_date_col is None:
             raise ValueError(
-                "rxnorm_col and rxnorm_date_col are required when rxnorm_df is provided."
+                "drug_ndc_col and drug_date_col are required when drug_df is provided."
             )
         parts.append(
-            rxnorm_to_events(rxnorm_df, rxnorm_col, rxnorm_date_col, subject_col)
+            drug_to_events(
+                drug_df,
+                drug_ndc_col,
+                drug_date_col,
+                subject_col,
+                drug_col=drug_col,
+                ndc_mapping_file=ndc_mapping_file,
+                drug_name_mapping_file=drug_name_mapping_file,
+            )
         )
 
     if cpt_df is not None:
@@ -354,7 +389,7 @@ def build_obs_log(
 
     if not parts:
         raise ValueError(
-            "At least one modality (icd_df, rxnorm_df, cpt_df, or notes_df) must be provided."
+            "At least one modality (icd_df, drug_df, cpt_df, or notes_df) must be provided."
         )
 
     return pd.concat(parts, ignore_index=True)
