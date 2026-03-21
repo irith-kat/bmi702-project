@@ -1,6 +1,6 @@
 ---
-name: clinical-research-session
-description: Start a structured clinical research session for cohort building (rule-based or MAP-based phenotyping). Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, decides the phenotyping approach, then produces a research protocol.
+name: clinical-research-session-base
+description: Start a structured clinical research session for rule-based cohort building. Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
 ---
 
 # Clinical Research Workflow
@@ -102,7 +102,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - Should clinical notes be used for NLP CUI features? (improves sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
 
 **ONCE files:**
-- Are ONCE files available in `input/`? (required for MAP; generate at https://shiny.parse-health.org/ONCE/ if not)
+- Are ONCE files available in `input/`? (generate at https://shiny.parse-health.org/ONCE/ if not)
 
 **Exclusion criteria** (multiple allowed):
 - Age < 18
@@ -121,20 +121,6 @@ Review answers in the terminal. Key refinements to consider:
 - **Anchor ICD/PheCode** — Confirm it exists before proceeding
 - **Dataset** — Recommend demo for first runs; switch to full MIMIC-IV once the pipeline validates
 - **NLP decision** — Confirm whether notes will be used before writing feature-matrix code
-
-**Decide phenotyping approach** using the `phenotyping-strategy` skill criteria:
-
-| Signal | Points toward |
-|--------|--------------|
-| ONCE files available | MAP |
-| ≥1,000 candidates expected | MAP |
-| ICD specificity known to be low (e.g. RA ~58% PPV) | MAP |
-| Need per-patient probability scores | MAP |
-| No ONCE files / exploratory / pilot | Rule-based |
-| Small dataset (<200 candidates) | Rule-based |
-| Simple inclusion criteria only | Rule-based |
-
-State the chosen approach and reason explicitly before drafting the protocol.
 
 ---
 
@@ -158,12 +144,10 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Exclusion:** [criteria with rationale]
 
 ### Cohort Definition Approach
-**Method:** [Rule-based ICD filter | MAP (Multimodal Automated Phenotyping)]
+**Method:** Rule-based ICD filter
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
 **ONCE files:** [codified file name, narrative file name, or N/A]
-**MAP rationale:** [why MAP over rule-based — e.g. "RA ICD specificity ~58%; ONCE files available; ≥1k candidates"]
-**MAP config:** [min_nonzero threshold; NLP contribution expected: high / low / unknown]
 
 ### Characterization Plan
 1. [Demographics — age distribution, sex, race]
@@ -236,16 +220,14 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 |------|-------|-------------|-------|--------|
 | 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables | `obs_log` |
 | 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes | `obs_log` + `event_type="cui"` rows |
-| 3 | `map-phenotyping` | Fit Poisson mixture model over ONCE co-features; assign posterior probabilities and binary labels | `obs_log` + ONCE files | `map_results` with `phenotype` column |
 
-**ONCE files:** Required for MAP. Place codified and narrative feature files in `input/`. Generate at https://shiny.parse-health.org/ONCE/ if not present. Enable `phenotyping_features = True` to reduce noise.
+**ONCE files:** Place codified and narrative feature files in `input/`. Generate at https://shiny.parse-health.org/ONCE/ if not present. Enable `phenotyping_features = True` to reduce noise.
 
 ### Data & Methodology
 | Skill | When to Use |
 |-------|-------------|
 | `m4-api` | Writing SQL queries, multi-step data access |
 | `mimic-table-relationships` | Understanding joins, avoiding duplicates |
-| `phenotyping-strategy` | Deciding MAP vs rule-based at study start |
 
 ---
 
@@ -274,13 +256,12 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 ```
 01_cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
                             build obs_log via mimic-preprocessing;
-                            load ONCE codified features;
-                            run map-phenotyping (preprocess_map + run_map) → map_results.parquet;
+                            apply ICD/PheCode count threshold to obs_log;
                             save cohort.parquet (cases + controls)
 
 02_feature_matrix.py     ← mimic-note-preprocessing (if NLP enabled): filter candidates,
                             fetch notes, run MedSpaCy NER, append CUI rows to obs_log;
-                            load ONCE narrative features; build full feature matrix
+                            join ONCE features; build feature matrix
 
 03_characterization.py   ← describe cases: age histogram, sex/race bar charts,
                             top-10 comorbidities, top ONCE features cases vs controls
