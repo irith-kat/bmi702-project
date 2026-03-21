@@ -97,4 +97,4 @@ df2 = execute_query("SELECT subject_id, text FROM mimiciv_note.discharge LIMIT 1
 
 ## Notes on Table Names
 
-All queries use canonical `schema.table` names (e.g., `mimiciv_hosp.patients`, `mimiciv_icu.icustays`). These work on both the local DuckDB backend and the BigQuery backend without modification.
+All queries use canonical `schema.table` names (e.g., `mimiciv_hosp.patients`, `mimiciv_icu.icustays`). These work on both backends without modification.

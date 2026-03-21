@@ -106,7 +106,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - `mimic-iv-demo` (100 patients, for testing/development)
 
 **NLP / notes:**
-- Should clinical notes be used for NLP CUI features? (improves MAP sensitivity; requires BigQuery access and extra runtime — see `mimic-note-preprocessing`)
+- Should clinical notes be used for NLP CUI features? (improves MAP sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
 - If unsure: recommend yes for MAP, since NLP adds patients ICD missed
 
 **Exclusion criteria** (multiple allowed):
@@ -125,7 +125,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 Review answers in the terminal. Key refinements to consider:
 - **Anchor PheCode** — Identify it from the ONCE codified file (`target_similarity == 1.0`); confirm it exists before proceeding
 - **Dataset** — Recommend demo for first runs; switch to full MIMIC-IV once the pipeline validates
-- **NLP decision** — If notes are being used, confirm BigQuery access before committing to that path
+- **NLP decision** — Confirm whether notes will be used before writing feature-matrix code
 
 ---
 
@@ -151,7 +151,7 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 ### Phenotyping Approach
 **Method:** [MAP / rule-based ICD filter]
 **ONCE files:** [codified file name, narrative file name, or N/A]
-**NLP:** [Yes — BigQuery notes / No — structured EHR only]
+**NLP:** [Yes — clinical notes / No — structured EHR only]
 **Anchor PheCode:** [e.g. 455 — Hemorrhoids]
 
 ### Characterization Plan
@@ -227,7 +227,7 @@ When the goal is to identify patients with a specific disease from EHR data, inv
 | Step | Skill | What it does | Input | Output |
 |------|-------|-------------|-------|--------|
 | 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables (diagnoses, procedures, prescriptions) | `obs_log` (long-format observation log) |
-| 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes from BigQuery | `obs_log` extended with `event_type="cui"` rows |
+| 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + discharge notes | `obs_log` extended with `event_type="cui"` rows |
 | 3 | `map-phenotyping` | Run MAP mixture model → per-patient probability scores + binary case/control labels | `obs_log`, ONCE features, anchor PheCode | `map_results` with `score` and `phenotype` columns |
 
 **Trigger rule:** If the user mentions ONCE files, MAP phenotyping, or wants to identify patients with a disease condition, always confirm ONCE files exist before writing feature-matrix code. If ONCE files are not present, refer the user to https://shiny.parse-health.org/ONCE/ to generate codified and narrative feature files. Recommend enabling the `phenotyping_features = True` filter in ONCE to reduce noise.
@@ -253,13 +253,13 @@ When the goal is to identify patients with a specific disease from EHR data, inv
 
 **Interview (ask in one batch):**
 - Which dataset — `mimic-iv` or `mimic-iv-demo` for development?
-- Should clinical notes (BigQuery) be used for NLP CUI features?
+- Should clinical notes be used for NLP CUI features?
 - Any exclusion criteria (e.g. age < 18)?
 
 **After response:**
 - Glob for ONCE files in `input/` — confirm codified and narrative files exist
 - Identify anchor PheCode from the codified file (`target_similarity == 1.0`) — expected `455` for hemorrhoids
-- Note NLP decision; if yes, confirm BigQuery access before proceeding
+- Note NLP decision
 
 **Draft protocol → show to researcher → wait for approval**
 
@@ -270,7 +270,7 @@ cohort_definition.py     ← m4-api (DuckDB): pull subjects, diagnoses_icd, proc
                             prescriptions from MIMIC-IV; build obs_log with mimic-preprocessing
 
 feature_matrix.py        ← mimic-note-preprocessing: filter obs_log to candidates,
-                            fetch notes from BigQuery, run NER, append CUI events;
+                            fetch notes, run NER, append CUI events;
                             then map-phenotyping: preprocess_map → mat_df + note_df
 
 map_phenotyping.py       ← map-phenotyping: run_map → scored cohort; apply threshold;

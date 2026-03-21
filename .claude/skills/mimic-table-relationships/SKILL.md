@@ -259,11 +259,11 @@ SELECT
 FROM joined;
 ```
 
-## BigQuery vs DuckDB Syntax
+## Backend Syntax Differences
 
-MIMIC concepts are written for BigQuery. Key syntax differences (table names use the same canonical `schema.table` format on both backends):
+Key syntax differences between backends (table names use the same canonical `schema.table` format on both):
 
-| BigQuery | DuckDB |
+| BigQuery-style | DuckDB-style |
 |----------|--------|
 | `DATETIME_ADD(x, INTERVAL '1' HOUR)` | `x + INTERVAL '1 hour'` |
 | `DATETIME_DIFF(a, b, HOUR)` | `EXTRACT(EPOCH FROM (a - b))/3600` |
