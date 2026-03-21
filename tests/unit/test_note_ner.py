@@ -3,50 +3,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 import note_ner
-from note_ner import aggregate_features, extract_cui_features
-
-
-# ---------------------------------------------------------------------------
-# aggregate_features
-# ---------------------------------------------------------------------------
-
-
-def _long_df():
-    return pd.DataFrame(
-        {
-            "patient_id": [101, 101, 102],
-            "cui": ["C0003873", "C0020443", "C0003873"],
-            "count": [1, 1, 1],
-        }
-    )
-
-
-def test_aggregate_features_binary():
-    result = aggregate_features(_long_df(), "patient_id", "cui")
-    assert result.loc[101, "C0003873"] == 1
-    assert result.loc[101, "C0020443"] == 1
-    assert result.loc[102, "C0003873"] == 1
-    # patient 102 has no C0020443
-    assert result.loc[102, "C0020443"] == 0
-
-
-def test_aggregate_features_with_value_column():
-    df = pd.DataFrame(
-        {
-            "patient_id": [101, 101],
-            "cui": ["C0003873", "C0003873"],
-            "count": [1, 2],
-        }
-    )
-    result = aggregate_features(df, "patient_id", "cui", value_column="count")
-    assert result.loc[101, "C0003873"] == 3
-
-
-def test_aggregate_features_single_patient_single_cui():
-    df = pd.DataFrame({"pid": [1], "cui": ["C0001"], "count": [1]})
-    result = aggregate_features(df, "pid", "cui", value_column="count")
-    assert result.shape == (1, 1)
-    assert result.loc[1, "C0001"] == 1
+from note_ner import extract_cui_features
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +99,60 @@ def test_extract_returns_correct_columns(mock_medspacy):
 
     # Even when empty, the DataFrame should be constructable and have the right shape
     assert isinstance(result, pd.DataFrame)
+
+
+def test_extract_empty_notes_df():
+    """Empty input returns an empty DataFrame with the expected columns, no medspacy call."""
+    empty = pd.DataFrame(columns=["patient_id", "note_text"])
+    result = extract_cui_features(empty, "note_text", "patient_id", TARGET_CUIS)
+
+    assert result.empty
+    assert set(result.columns) == {"patient_id", "cui", "count"}
+
+
+@patch.object(note_ner, "medspacy")
+def test_extract_includes_datetime_when_date_column_given(mock_medspacy):
+    ent = _make_mock_ent("C0003873")
+    doc = MagicMock()
+    doc.ents = [ent]
+    mock_medspacy.load.return_value = _make_mock_nlp(doc)
+
+    notes = pd.DataFrame(
+        {"patient_id": [101], "note_text": ["some note"], "note_date": ["2020-01-01"]}
+    )
+    result = extract_cui_features(
+        notes, "note_text", "patient_id", TARGET_CUIS, date_column="note_date"
+    )
+
+    assert "datetime" in result.columns
+    assert result.iloc[0]["datetime"] == "2020-01-01"
+
+
+@patch.object(note_ner, "medspacy")
+def test_extract_max_note_chars_truncates_text(mock_medspacy):
+    """max_note_chars should truncate texts before passing to the NLP pipeline."""
+    doc = MagicMock()
+    doc.ents = []
+    mock_medspacy.load.return_value = _make_mock_nlp(doc)
+
+    notes = _notes_df(texts=("A" * 500,))
+    extract_cui_features(
+        notes, "note_text", "patient_id", TARGET_CUIS, max_note_chars=10
+    )
+
+    # The text passed to nlp.pipe should be the truncated version
+    pipe_call_args = mock_medspacy.load.return_value.pipe.call_args
+    texts_passed = list(pipe_call_args[0][0])
+    assert all(len(t) <= 10 for t in texts_passed)
+
+
+@patch.object(note_ner, "medspacy")
+def test_extract_no_date_column_omits_datetime(mock_medspacy):
+    ent = _make_mock_ent("C0003873")
+    doc = MagicMock()
+    doc.ents = [ent]
+    mock_medspacy.load.return_value = _make_mock_nlp(doc)
+
+    result = extract_cui_features(_notes_df(), "note_text", "patient_id", TARGET_CUIS)
+
+    assert "datetime" not in result.columns
