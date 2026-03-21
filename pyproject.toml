@@ -12,6 +12,7 @@ dependencies = [
     "pytest>=9.0.2",
     "scipy>=1.17.1",
     "vitrine>=0.1.0",
+    "plotly>=6.6.0",
 ]
 
 [build-system]
