@@ -149,13 +149,19 @@ def rollup_cpt_to_ccs(
     if not os.path.exists(mapping_file):
         raise FileNotFoundError(f"Mapping file not found: {mapping_file}")
 
-    mapping_df = pd.read_csv(mapping_file)
+    # The AHRQ CCS file has a metadata title row before the actual header.
+    mapping_df = pd.read_csv(mapping_file, skiprows=1)
     mapping_df.columns = [c.lower().replace(" ", "_") for c in mapping_df.columns]
 
-    # Ensure range boundary columns are 5-char strings — pandas may infer purely
-    # numeric ranges (e.g. 00100 → 100) as int64, which breaks string comparison.
-    mapping_df["start_code"] = mapping_df["start_code"].astype(str).str.zfill(5)
-    mapping_df["end_code"] = mapping_df["end_code"].astype(str).str.zfill(5)
+    # The file uses a combined "Code Range" column (e.g. "'0735T-0735T'") instead
+    # of separate start/end columns. Strip surrounding single quotes then split.
+    mapping_df["code_range"] = mapping_df["code_range"].astype(str).str.strip("'")
+    mapping_df["start_code"] = (
+        mapping_df["code_range"].str.split("-").str[0].str.zfill(5)
+    )
+    mapping_df["end_code"] = (
+        mapping_df["code_range"].str.split("-").str[-1].str.zfill(5)
+    )
 
     df_result = df.copy()
     df_result[cpt_column] = (
@@ -169,9 +175,7 @@ def rollup_cpt_to_ccs(
             (mapping_df["start_code"] <= code) & (mapping_df["end_code"] >= code)
         ]
         if not match.empty:
-            return match.iloc[0]["ccs_category"], match.iloc[0][
-                "ccs_category_description"
-            ]
+            return match.iloc[0]["ccs"], match.iloc[0]["ccs_label"]
         return None, None
 
     results = df_result[cpt_column].map(find_ccs)
