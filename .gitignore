@@ -213,3 +213,6 @@ Phecode_map_v1_2_icd9_icd10cm.csv
 mimiciv/
 m4_data/
 *.parquet
+mapping_dicts/*.csv
+mapping_dicts/*/*.csv
+output/
