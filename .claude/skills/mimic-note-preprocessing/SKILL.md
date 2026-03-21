@@ -43,22 +43,9 @@ candidate_ids = set(obs_log[obs_log["event"].isin(once_events)]["subject_id"])
 print(f"Candidates: {len(candidate_ids)}")
 ```
 
-## Step 3 — Load Notes from BigQuery (Candidates Only)
+## Step 3 — Load Notes (Candidates Only)
 
-> **Backend switch required.** Tabular EHR data (diagnoses, admissions, procedures) uses the local DuckDB backend. Clinical notes live in BigQuery. Explicitly switch backends when crossing between them — forgetting this is a common source of silent errors.
->
-> ```python
-> # Tabular EHR (local DuckDB) — used in mimic-preprocessing
-> set_active_backend("duckdb")
-> set_dataset("mimic-iv-demo")  # or "mimic-iv"
->
-> # Switch to BigQuery for notes
-> set_active_backend("bigquery")
-> set_dataset("mimic-iv-note")
-> ```
-
-Discharge notes are in `mimic-iv-note` on BigQuery. Always filter to candidate
-patients in the SQL query — the full notes table is too large to pull wholesale.
+Always filter to candidate patients in the SQL query — the full notes table is too large to pull wholesale.
 
 **M4 token limit:** M4 enforces a 10k-token query limit. A plain `IN (...)` with
 7-digit subject IDs hits this limit at ~3,500 IDs. Always use batched queries:
@@ -66,7 +53,6 @@ patients in the SQL query — the full notes table is too large to pull wholesal
 ```python
 import pandas as pd
 
-set_active_backend("bigquery")
 set_dataset("mimic-iv-note")
 
 candidate_ids = sorted(candidate_ids)
