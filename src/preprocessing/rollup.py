@@ -49,15 +49,83 @@ def rollup_icd_to_phecode(
     return result_df
 
 
-def rollup_rxnorm_to_ingredient(df: pd.DataFrame, rxnorm_column: str) -> pd.DataFrame:
+def rollup_ndc_to_ingredient(
+    df: pd.DataFrame,
+    ndc_column: str,
+    drug_column: str | None = None,
+    ndc_mapping_file: str = "mapping_dicts/ndc_to_rxnorm_ingredient.csv",
+    drug_name_mapping_file: str = "mapping_dicts/drug_name_to_rxnorm_ingredient.csv",
+) -> pd.DataFrame:
     """
-    Roll up RxNorm codes to ingredient-level.
+    Map NDC codes to RxNorm ingredient-level concepts.
 
-    Note: Placeholder for integration with an RxNorm API or local RxNav-style
-    mapping table. Currently returns the DataFrame unchanged.
+    Primary lookup: 11-digit NDC → RxNorm ingredient via OMOP Athena mapping
+    (NDC → Clinical/Branded Drug → Ingredient via CONCEPT_ANCESTOR).
+
+    Fallback: when NDC lookup fails and drug_column is provided, attempts a
+    case-insensitive match against gcpt_drug_ndc-derived drug name mapping.
+
+    Adds two columns to the returned DataFrame:
+      - rxnorm_ingredient_id   : RxNorm concept_id of the ingredient
+      - rxnorm_ingredient_name : human-readable ingredient name
+
+    Args:
+        df: Input DataFrame containing NDC codes.
+        ndc_column: Column name with 11-digit NDC strings.
+        drug_column: Optional column name with drug free-text names (used as
+            fallback via gcpt_drug_ndc when NDC lookup misses).
+        ndc_mapping_file: Path to ndc_to_rxnorm_ingredient.csv.
+        drug_name_mapping_file: Path to drug_name_to_rxnorm_ingredient.csv.
+
+    Returns:
+        DataFrame with 'rxnorm_ingredient_id' and 'rxnorm_ingredient_name' added.
+        Rows with no match in either lookup have NaN in those columns.
     """
-    # TODO: Implement RxNorm to ingredient mapping (e.g., using RxNav API or local DB)
-    return df
+    if not os.path.exists(ndc_mapping_file):
+        raise FileNotFoundError(f"NDC mapping file not found: {ndc_mapping_file}")
+
+    ndc_map = pd.read_csv(
+        ndc_mapping_file,
+        dtype={"ndc": str, "ingredient_id": str, "ingredient_name": str},
+    ).rename(
+        columns={
+            "ingredient_id": "rxnorm_ingredient_id",
+            "ingredient_name": "rxnorm_ingredient_name",
+        }
+    )
+
+    result = df.copy()
+    result = result.merge(ndc_map, left_on=ndc_column, right_on="ndc", how="left")
+    # Drop the mapping's join key only if it differs from the input column name
+    if ndc_column != "ndc":
+        result.drop(columns=["ndc"], inplace=True)
+
+    # Fallback: drug name lookup for rows NDC lookup missed
+    if drug_column is not None and os.path.exists(drug_name_mapping_file):
+        drug_map = pd.read_csv(
+            drug_name_mapping_file,
+            dtype={"drug_name": str, "ingredient_id": str, "ingredient_name": str},
+        ).rename(
+            columns={
+                "ingredient_id": "rxnorm_ingredient_id_fb",
+                "ingredient_name": "rxnorm_ingredient_name_fb",
+            }
+        )
+
+        missed = result["rxnorm_ingredient_id"].isna()
+        if missed.any():
+            normalized = result.loc[missed, drug_column].str.strip().str.lower()
+            fb = normalized.to_frame("drug_name").merge(
+                drug_map, on="drug_name", how="left"
+            )
+            result.loc[missed, "rxnorm_ingredient_id"] = fb[
+                "rxnorm_ingredient_id_fb"
+            ].values
+            result.loc[missed, "rxnorm_ingredient_name"] = fb[
+                "rxnorm_ingredient_name_fb"
+            ].values
+
+    return result
 
 
 def rollup_cpt_to_ccs(
