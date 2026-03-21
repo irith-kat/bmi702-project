@@ -6,7 +6,7 @@ import pytest
 from rollup import (
     rollup_cpt_to_ccs,
     rollup_icd_to_phecode,
-    rollup_rxnorm_to_ingredient,
+    rollup_ndc_to_ingredient,
 )
 
 
@@ -34,16 +34,42 @@ def _icd_mapping_file(tmp_path: Path) -> Path:
 
 
 def _ccs_mapping_file(tmp_path: Path) -> Path:
-    """Minimal CCS mapping CSV — headers already lowercase so the normalisation is a no-op."""
+    """Minimal CCS mapping CSV in AHRQ format: metadata title row + combined Code Range column."""
+    p = tmp_path / "CCS_Services_Procedures_v2025-1.csv"
+    p.write_text(
+        '"CLINCAL CLASSIFICATIONS SOFTWARE (CCS) FOR SERVICES AND PROCEDURES, v2025.1"\n'
+        "Code Range,CCS,CCS Label\n"
+        "'00100-01999',1,Anesthesia\n"
+        "'10021-10022',2,Biopsy\n"
+        "'99201-99499',3,E&M visit\n"
+    )
+    return p
+
+
+def _ndc_mapping_file(tmp_path: Path) -> Path:
+    """Minimal NDC→RxNorm ingredient mapping CSV."""
     df = pd.DataFrame(
         {
-            "start_code": ["00100", "10021", "99201"],
-            "end_code": ["01999", "10022", "99499"],
-            "ccs_category": ["CCS1", "CCS2", "CCS3"],
-            "ccs_category_description": ["Anesthesia", "Biopsy", "E&M visit"],
+            "ndc": ["00071015523", "00006007154"],
+            "ingredient_id": ["321988", "723"],
+            "ingredient_name": ["lisinopril", "aspirin"],
         }
     )
-    p = tmp_path / "CCS_Services_Procedures_v2025-1.csv"
+    p = tmp_path / "ndc_to_rxnorm_ingredient.csv"
+    df.to_csv(p, index=False)
+    return p
+
+
+def _drug_name_mapping_file(tmp_path: Path) -> Path:
+    """Minimal drug-name fallback mapping CSV."""
+    df = pd.DataFrame(
+        {
+            "drug_name": ["metformin", "atorvastatin"],
+            "ingredient_id": ["6809", "83367"],
+            "ingredient_name": ["metformin", "atorvastatin"],
+        }
+    )
+    p = tmp_path / "drug_name_to_rxnorm_ingredient.csv"
     df.to_csv(p, index=False)
     return p
 
@@ -106,22 +132,60 @@ def test_icd_missing_file_raises(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# rollup_rxnorm_to_ingredient  (stub — returns df unchanged)
+# rollup_ndc_to_ingredient
 # ---------------------------------------------------------------------------
 
 
-def test_rxnorm_returns_dataframe_unchanged():
-    df = pd.DataFrame({"rxnorm": ["856917", "308460"], "dose": [10, 20]})
-    result = rollup_rxnorm_to_ingredient(df, "rxnorm")
+def test_ndc_maps_known_code(tmp_path):
+    ndc_file = _ndc_mapping_file(tmp_path)
+    df = pd.DataFrame({"ndc": ["00071015523", "00006007154"]})
+    result = rollup_ndc_to_ingredient(df, "ndc", ndc_mapping_file=str(ndc_file))
 
-    pd.testing.assert_frame_equal(result, df)
+    assert result.loc[0, "rxnorm_ingredient_id"] == "321988"
+    assert result.loc[0, "rxnorm_ingredient_name"] == "lisinopril"
+    assert result.loc[1, "rxnorm_ingredient_id"] == "723"
+    assert result.loc[1, "rxnorm_ingredient_name"] == "aspirin"
 
 
-def test_rxnorm_preserves_all_columns():
-    df = pd.DataFrame({"rxnorm": ["856917"], "patient_id": [101], "qty": [30]})
-    result = rollup_rxnorm_to_ingredient(df, "rxnorm")
+def test_ndc_unmatched_code_returns_nan(tmp_path):
+    ndc_file = _ndc_mapping_file(tmp_path)
+    df = pd.DataFrame({"ndc": ["99999999999"]})
+    result = rollup_ndc_to_ingredient(df, "ndc", ndc_mapping_file=str(ndc_file))
 
-    assert list(result.columns) == list(df.columns)
+    assert pd.isna(result.loc[0, "rxnorm_ingredient_id"])
+
+
+def test_ndc_drug_name_fallback(tmp_path):
+    ndc_file = _ndc_mapping_file(tmp_path)
+    name_file = _drug_name_mapping_file(tmp_path)
+    df = pd.DataFrame({"ndc": ["99999999999"], "drug": ["Metformin"]})
+    result = rollup_ndc_to_ingredient(
+        df,
+        "ndc",
+        drug_column="drug",
+        ndc_mapping_file=str(ndc_file),
+        drug_name_mapping_file=str(name_file),
+    )
+
+    assert result.loc[0, "rxnorm_ingredient_id"] == "6809"
+    assert result.loc[0, "rxnorm_ingredient_name"] == "metformin"
+
+
+def test_ndc_missing_file_raises(tmp_path):
+    df = pd.DataFrame({"ndc": ["00071015523"]})
+    with pytest.raises(FileNotFoundError):
+        rollup_ndc_to_ingredient(
+            df, "ndc", ndc_mapping_file=str(tmp_path / "missing.csv")
+        )
+
+
+def test_ndc_preserves_original_columns(tmp_path):
+    ndc_file = _ndc_mapping_file(tmp_path)
+    df = pd.DataFrame({"ndc": ["00071015523"], "patient_id": [42]})
+    result = rollup_ndc_to_ingredient(df, "ndc", ndc_mapping_file=str(ndc_file))
+
+    assert "patient_id" in result.columns
+    assert result.loc[0, "patient_id"] == 42
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +198,7 @@ def test_cpt_matches_code_in_range(tmp_path):
     df = pd.DataFrame({"cpt": ["00500"]})
     result = rollup_cpt_to_ccs(df, "cpt", str(p))
 
-    assert result.loc[0, "ccs_category"] == "CCS1"
+    assert result.loc[0, "ccs_category"] == 1
     assert result.loc[0, "ccs_description"] == "Anesthesia"
 
 
@@ -153,7 +217,7 @@ def test_cpt_pads_short_code_with_zeros(tmp_path):
     df = pd.DataFrame({"cpt": ["500"]})
     result = rollup_cpt_to_ccs(df, "cpt", str(p))
 
-    assert result.loc[0, "ccs_category"] == "CCS1"
+    assert result.loc[0, "ccs_category"] == 1
 
 
 def test_cpt_uppercases_input(tmp_path):
@@ -162,7 +226,7 @@ def test_cpt_uppercases_input(tmp_path):
     df = pd.DataFrame({"cpt": ["00500"]})
     result = rollup_cpt_to_ccs(df, "cpt", str(p))
 
-    assert result.loc[0, "ccs_category"] == "CCS1"
+    assert result.loc[0, "ccs_category"] == 1
 
 
 def test_cpt_code_longer_than_5_chars_returns_none(tmp_path):
@@ -194,7 +258,7 @@ def test_cpt_multiple_codes_mixed_matches(tmp_path):
     df = pd.DataFrame({"cpt": ["00500", "10021", "50000", "99213"]})
     result = rollup_cpt_to_ccs(df, "cpt", str(p))
 
-    assert result.loc[0, "ccs_category"] == "CCS1"  # Anesthesia range
-    assert result.loc[1, "ccs_category"] == "CCS2"  # Biopsy range
+    assert result.loc[0, "ccs_category"] == 1  # Anesthesia range
+    assert result.loc[1, "ccs_category"] == 2  # Biopsy range
     assert pd.isna(result.loc[2, "ccs_category"])  # no match
-    assert result.loc[3, "ccs_category"] == "CCS3"  # E&M range
+    assert result.loc[3, "ccs_category"] == 3  # E&M range
