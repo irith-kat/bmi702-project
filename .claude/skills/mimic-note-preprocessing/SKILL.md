@@ -5,7 +5,7 @@ description: Extract CUI mentions from MIMIC-IV discharge notes using MedSpaCy a
 
 # MIMIC Notes Preprocessing
 
-Extracts NLP CUI mentions from clinical notes using MedSpaCy and returns them in the standard observation log format (`event_type="cui"`, `event="CUI:C0003873"`).
+Extracts NLP CUI mentions from clinical notes using MedSpaCy and returns them in the standard observation log format (`event_type="cui"`, `event="CUI:C0003873"`). Requires user-provided ONCE files to specify target CUIs.
 
 Negated and family-history mentions are excluded automatically by MedSpaCy's context module.
 
@@ -16,38 +16,55 @@ import sys
 sys.path.insert(0, "path/to/src/preprocessing")
 from preprocessing import notes_to_events
 from once import get_once_features
+from m4 import set_dataset, execute_query
+from m4.config import set_active_backend
 ```
 
-## Step 1 — Get Target CUIs from ONCE (optional — skip if not using NLP)
+## Step 1 — Get Target CUIs from ONCE
 
-ONCE files are **user-provided** and already in `src/`. NLP extraction is only needed when adding CUI features to MAP or building a note-based feature set.
+ONCE files are **user-provided** and should be placed in `input/`.
 
 ```python
-once_features = get_once_features(codified_file, narrative_file)
+once_features = get_once_features(
+    codified_file  = "input/ONCE_codified.csv", # Exact name can vary
+    narrative_file = "input/ONCE_narrative.csv", # Exact name can vary
+)
 target_cuis = once_features["nlp_target_cuis"]
 # List of {"term": "rheumatoid arthritis", "cui": "C0003873"} dicts
 ```
 
-## Step 2 — Load Notes (Candidates Only)
+## Step 2 — Identify Candidates from obs_log
 
-Always filter to candidate patients before loading — the full notes file is too large.
+Before loading notes, filter the observation log (built in the mimic-preprocessing step) to patients who have at least one ONCE codified event. This is the candidate set — patients plausibly related to the phenotype of interest. Running NLP on the full cohort is expensive and unnecessary.
 
 ```python
-note_chunks = []
-for chunk in pd.read_csv(
-    "mimiciv/note/discharge.csv.gz",
-    usecols=["subject_id", "text", "charttime"],
-    parse_dates=["charttime"],
-    chunksize=5_000,
-):
-    sub = chunk[chunk["subject_id"].isin(candidate_ids)].copy()
-    if len(sub):
-        note_chunks.append(sub)
-
-notes_df = pd.concat(note_chunks, ignore_index=True).dropna(subset=["text"])
+once_events   = set(once_features["codified_list"])
+candidate_ids = set(obs_log[obs_log["event"].isin(once_events)]["subject_id"])
+print(f"Candidates: {len(candidate_ids)}")
 ```
 
-## Step 3 — notes_to_events
+## Step 3 — Load Notes from BigQuery (Candidates Only)
+
+Discharge notes are in `mimic-iv-note` on BigQuery. Always filter to candidate
+patients in the SQL query — the full notes table is too large to pull wholesale.
+The `IN (...)` list approach is practical up to ~5K subjects; for larger sets
+use a temp table or `JOIN`, and work in batches if needed.
+
+```python
+set_active_backend("bigquery")
+set_dataset("mimic-iv-note")
+
+subject_id_list = ", ".join(str(sid) for sid in sorted(candidate_ids))
+notes_df = execute_query(f"""
+    SELECT subject_id, text, charttime
+    FROM mimiciv_note.discharge
+    WHERE subject_id IN ({subject_id_list})
+""")
+notes_df = notes_df.dropna(subset=["text"])
+print(f"Notes fetched: {len(notes_df)} ({notes_df['subject_id'].nunique()} patients)")
+```
+
+## Step 4 — notes_to_events
 
 ```python
 nlp_obs = notes_to_events(
@@ -79,24 +96,6 @@ nlp_obs = notes_to_events(
 | 3,000 (1/patient × 3K candidates) | ~10 min |
 | 12,000 (1/patient × 12K candidates) | ~40 min |
 | 37,000 (3/patient × 12K candidates) | ~2 hr |
-
-## Adding NLP to build_obs_log
-
-Pass `notes_df` directly to `build_obs_log` — it calls `notes_to_events` internally:
-
-```python
-obs_log = build_obs_log(
-    icd_df            = diagnoses_with_dates,
-    icd_col           = "icd_code",
-    icd_date_col      = "admittime",
-    notes_df          = notes_df,
-    notes_text_col    = "text",
-    notes_date_col    = "charttime",
-    target_cuis       = target_cuis,
-    max_note_chars    = 10_000,
-    notes_per_patient = 3,
-)
-```
 
 ## Effect on MAP
 
