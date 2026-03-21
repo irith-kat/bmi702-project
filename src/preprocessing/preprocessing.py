@@ -221,6 +221,7 @@ def notes_to_events(
     max_note_chars: int | None = None,
     notes_per_patient: int | None = None,
     n_process: int = 1,
+    batch_size: int = 256,
 ) -> pd.DataFrame:
     if notes_per_patient is not None:
         notes_df = (
@@ -237,6 +238,7 @@ def notes_to_events(
         date_column=date_col,
         max_note_chars=max_note_chars,
         n_process=n_process,
+        batch_size=batch_size,
     )
     cui_df["event_type"] = "cui"
     cui_df["event"] = "CUI:" + cui_df["cui"]
