@@ -95,3 +95,55 @@ map_results = run_map(mat_df, note_df, anchor_col)
 - **Low score (<0.1)** — little co-feature support, likely controls or miscoded
 - **`icd_only` group** — patients ICD-coded but MAP-rejected → probable false positives
 - **`map_only` group** — patients MAP found that ICD missed → requires NLP to be non-zero
+
+---
+
+## Running a Full MAP Study
+
+### Confirm Before Writing Code
+
+- Glob for ONCE files in `input/` — confirm both codified and narrative files exist
+- Identify anchor PheCode from the codified file (`target_similarity == 1.0`)
+- Confirm anchor PheCode column will exist in `mat_df` as a bare string (e.g. `"455"`, not `"PheCode:455"`)
+- Confirm NLP decision (notes or structured EHR only) before writing feature-matrix code
+
+### Suggested Script Structure
+
+```
+01_cohort_definition.py   ← m4-api: pull subjects, diagnoses_icd, procedures,
+                              prescriptions; build obs_log with mimic-preprocessing
+
+02_feature_matrix.py      ← mimic-note-preprocessing (if NLP enabled): filter obs_log
+                              to candidates, fetch notes, run NER, append CUI events;
+                              then preprocess_map → mat_df + note_df
+
+03_map_phenotyping.py     ← run_map → scored cohort; apply threshold;
+                              save cohort.parquet
+
+04_characterization.py    ← describe cases: age histogram, sex/race bar charts,
+                              top-10 comorbidities, top ONCE features cases vs controls
+```
+
+### Key Checks Before Running MAP
+
+- Apply global sparsity filter (`min_nonzero`) to **all** `mat_df` columns after joining NLP features — not just PheCodes. MAP's flexmix EM crashes ("Log-likelihood: NA") on any column with too few non-zero patients, regardless of dataset size. Use `min_nonzero=20` for full datasets, `5` for demo/pilot runs. The anchor PheCode is always retained.
+- Verify `note_df` has no zero values
+
+### Reporting After MAP Runs
+
+- **CONSORT flow:** total subjects → candidates (≥1 ONCE codified event) → MAP cases → MAP controls
+- **Score distribution:** histogram of posterior scores — show the bimodal shape if present (cases cluster near 1, controls near 0)
+- **Feature prevalence:** compare top ONCE features between cases (`phenotype=1`) and controls (`phenotype=0`) as a bar chart
+- **`RESULTS.md`:** save cohort size, MAP score summary (median, IQR), and key characterization findings to `output_dir`
+
+### Protocol Template — Phenotyping Approach Section
+
+When drafting a research protocol for a MAP study, include this section:
+
+```markdown
+### Phenotyping Approach
+**Method:** MAP (Multimodal Automated Phenotyping)
+**ONCE files:** [codified file name, narrative file name]
+**NLP:** [Yes — clinical notes / No — structured EHR only]
+**Anchor PheCode:** [e.g. 455 — Hemorrhoids]
+```

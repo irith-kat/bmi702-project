@@ -1,17 +1,17 @@
 ---
-name: clinical-research-session
-description: Start a structured clinical research session. Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
+name: clinical-research-session-no-map
+description: Start a structured clinical research session (rule-based cohort building, no MAP phenotyping). Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
 ---
 
 # Clinical Research Workflow
 
-Structured cohort building and phenotyping from research question through characterization. All work is organized as a **study** — one research question, one output directory, spanning one or more conversations.
+Structured cohort building from research question through characterization. All work is organized as a **study** — one research question, one output directory, spanning one or more conversations.
 
 ## When This Skill Activates
 
 - User invokes `/research` command
 - User describes research intent: "I want to study...", "Can we analyze...", "Find patients with..."
-- User mentions cohort analysis, phenotyping, cohort characterization, or disease identification
+- User mentions cohort analysis, cohort characterization, or disease identification
 
 ## Study Setup
 
@@ -41,8 +41,7 @@ output/{study}/
 ├── scripts/
 │   ├── 01_cohort_definition.py      ← suggested; name freely
 │   ├── 02_feature_matrix.py
-│   ├── 03_map_phenotyping.py
-│   └── 04_characterization.py
+│   └── 03_characterization.py
 ├── data/
 │   ├── cohort.parquet
 │   └── ...
@@ -91,11 +90,6 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - Is there a pre-existing ICD or PheCode to anchor on? If unknown, a lookup can help.
 - Are ONCE files available? If not, refer the user to https://shiny.parse-health.org/ONCE/ to generate codified and narrative feature files and place them in `input/`.
 
-**Phenotyping method:**
-- MAP (algorithmic, requires ONCE files) — best when ONCE files are available and high precision matters
-- Rule-based ICD filter — appropriate when the ICD code set is well-validated or the cohort is simple
-- See `phenotyping-strategy` skill to choose between these
-
 **Scope of the session:**
 - Cohort identification only (who has the condition?)
 - Cohort identification + characterization (who has it, and what do they look like?)
@@ -106,8 +100,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - `mimic-iv-demo` (100 patients, for testing/development)
 
 **NLP / notes:**
-- Should clinical notes be used for NLP CUI features? (improves MAP sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
-- If unsure: recommend yes for MAP, since NLP adds patients ICD missed
+- Should clinical notes be used for NLP CUI features? (improves sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
 
 **Exclusion criteria** (multiple allowed):
 - Age < 18
@@ -123,7 +116,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 ### After the Interview
 
 Review answers in the terminal. Key refinements to consider:
-- **Anchor PheCode** — Identify it from the ONCE codified file (`target_similarity == 1.0`); confirm it exists before proceeding
+- **Anchor ICD/PheCode** — Confirm it exists before proceeding
 - **Dataset** — Recommend demo for first runs; switch to full MIMIC-IV once the pipeline validates
 - **NLP decision** — Confirm whether notes will be used before writing feature-matrix code
 
@@ -137,7 +130,7 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 ## Research Protocol: [Title]
 
 ### Research Question
-[Specific, answerable question — e.g. "Identify and characterize patients with hemorrhoids in MIMIC-IV using MAP phenotyping"]
+[Specific, answerable question — e.g. "Identify and characterize patients with hemorrhoids in MIMIC-IV using ICD-based cohort definition"]
 
 ### Study Design
 [Cohort identification / Cohort identification + characterization]
@@ -148,11 +141,11 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Inclusion:** [criteria]
 **Exclusion:** [criteria with rationale]
 
-### Phenotyping Approach
-**Method:** [MAP / rule-based ICD filter]
+### Cohort Definition Approach
+**Method:** [Rule-based ICD filter]
 **ONCE files:** [codified file name, narrative file name, or N/A]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
-**Anchor PheCode:** [e.g. 455 — Hemorrhoids]
+**Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 
 ### Characterization Plan
 1. [Demographics — age distribution, sex, race]
@@ -187,16 +180,15 @@ Apply throughout the analysis.
 
 ### Statistical Rigor
 
-- Report cohort sizes at each pipeline step (raw → after exclusions → after MAP threshold)
-- Report MAP score distribution — not just final case/control counts
-- Report feature sparsity before and after `min_nonzero` filtering
+- Report cohort sizes at each pipeline step (raw → after exclusions → final case/control split)
+- Report feature sparsity before and after filtering
 - Be cautious with small subgroups; suppress characterization tables for cells n < 5
 
 ### Visualizations
 
 Use plots liberally — a chart often reveals what a table hides.
 
-**Distributions → Plotly figures, not raw tables.** Categorical variables (race, gender, admission type) → horizontal bar chart. Continuous variables (age, LOS, MAP score) → histogram. Reserve tabular summaries for small counts (n, median, IQR).
+**Distributions → Plotly figures, not raw tables.** Categorical variables (race, gender, admission type) → horizontal bar chart. Continuous variables (age, LOS) → histogram. Reserve tabular summaries for small counts (n, median, IQR).
 
 **Every plot must have an explanation.** When reporting a figure to the researcher, always include a 1–4 sentence interpretation: what the plot shows and why it matters.
 
@@ -208,7 +200,7 @@ import plotly.io as pio
 fig = pio.from_json(open(output_dir / "plots" / "age_distribution.json").read())
 ```
 
-Preferred plot types for cohort characterization: MAP score distribution (histogram), CONSORT flow (annotated diagram or table), demographic bar charts, feature prevalence comparison (cases vs controls).
+Preferred plot types for cohort characterization: CONSORT flow (annotated diagram or table), demographic bar charts, feature prevalence comparison (cases vs controls).
 
 ### Reproducibility
 
@@ -220,26 +212,20 @@ Preferred plot types for cohort characterization: MAP score distribution (histog
 
 ## M4 Skills Reference
 
-### Phenotyping Pipeline (use in this order for disease cohort identification)
-
-When the goal is to identify patients with a specific disease from EHR data, invoke these three skills **sequentially**. Each skill's output is the next skill's input.
+### Data Preparation Pipeline
 
 | Step | Skill | What it does | Input | Output |
 |------|-------|-------------|-------|--------|
 | 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables (diagnoses, procedures, prescriptions) | `obs_log` (long-format observation log) |
 | 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + discharge notes | `obs_log` extended with `event_type="cui"` rows |
-| 3 | `map-phenotyping` | Run MAP mixture model → per-patient probability scores + binary case/control labels | `obs_log`, ONCE features, anchor PheCode | `map_results` with `score` and `phenotype` columns |
 
-**Trigger rule:** If the user mentions ONCE files, MAP phenotyping, or wants to identify patients with a disease condition, always confirm ONCE files exist before writing feature-matrix code. If ONCE files are not present, refer the user to https://shiny.parse-health.org/ONCE/ to generate codified and narrative feature files. Recommend enabling the `phenotyping_features = True` filter in ONCE to reduce noise.
-
-**min_nonzero guidance:** Always apply a global sparsity filter to ALL `mat_df` columns before running MAP — not just PheCodes. MAP's flexmix EM crashes ("Log-likelihood: NA") on any column with too few non-zero patients, regardless of dataset size. Sparsity is driven by term rarity: even in full MIMIC-IV, device codes or highly specific ONCE NLP features may appear in <20 patients. Use `min_nonzero=20` (default) for full datasets, `5` for demo/pilot runs. The anchor PheCode is always retained.
+**ONCE files:** If ONCE files are available, refer to them for validated feature sets. Place codified and narrative feature files in `input/`. If not present, generate them at https://shiny.parse-health.org/ONCE/. Recommend enabling the `phenotyping_features = True` filter in ONCE to reduce noise.
 
 ### Data & Methodology
 | Skill | When to Use |
 |-------|-------------|
 | `m4-api` | Writing SQL queries, multi-step data access |
 | `mimic-table-relationships` | Understanding joins, avoiding duplicates |
-| `phenotyping-strategy` | Deciding between MAP and rule-based filtering |
 
 ---
 
@@ -247,48 +233,40 @@ When the goal is to identify patients with a specific disease from EHR data, inv
 
 ### Hemorrhoid cohort identification and characterization
 
-**User:** "Find all patients with hemorrhoids using the ONCE files and MAP, then characterize the cohort"
+**User:** "Find all patients with hemorrhoids using ICD codes, then characterize the cohort"
 
-**What you already know:** disease = hemorrhoids, method = MAP, ONCE files present, goal = identification + characterization. Skip most interview questions.
+**What you already know:** disease = hemorrhoids, method = rule-based ICD filter, goal = identification + characterization. Skip most interview questions.
 
 **Interview (ask in one batch):**
 - Which dataset — `mimic-iv` or `mimic-iv-demo` for development?
 - Should clinical notes be used for NLP CUI features?
 - Any exclusion criteria (e.g. age < 18)?
+- Are ONCE files available in `input/`?
 
 **After response:**
-- Glob for ONCE files in `input/` — confirm codified and narrative files exist
-- Identify anchor PheCode from the codified file (`target_similarity == 1.0`) — expected `455` for hemorrhoids
+- Confirm the anchor ICD/PheCode exists in the data
 - Note NLP decision
 
 **Draft protocol → show to researcher → wait for approval**
 
-**Execute — four suggested scripts:**
+**Execute — three suggested scripts:**
 
 ```
 cohort_definition.py     ← m4-api (DuckDB): pull subjects, diagnoses_icd, procedures,
-                            prescriptions from MIMIC-IV; build obs_log with mimic-preprocessing
+                            prescriptions from MIMIC-IV; build obs_log with mimic-preprocessing;
+                            apply ICD filter to define cases and controls; save cohort.parquet
 
-feature_matrix.py        ← mimic-note-preprocessing: filter obs_log to candidates,
+feature_matrix.py        ← mimic-note-preprocessing (if NLP enabled): filter obs_log to candidates,
                             fetch notes, run NER, append CUI events;
-                            then map-phenotyping: preprocess_map → mat_df + note_df
-
-map_phenotyping.py       ← map-phenotyping: run_map → scored cohort; apply threshold;
-                            report MAP score distribution (histogram); save cohort.parquet
+                            join ONCE features if available; build feature matrix
 
 characterization.py      ← describe cases: age histogram, sex/race bar charts,
                             top-10 comorbidities, top ONCE features cases vs controls
 ```
 
-**Key checks before MAP:**
-- Apply global sparsity filter (`min_nonzero`) to ALL columns after joining NLP features, not just PheCodes
-- Verify anchor PheCode column exists in `mat_df` (bare string, e.g. `"455"`, not `"PheCode:455"`)
-- Verify `note_df` has no zero values
-
-**After MAP runs:**
-- Report CONSORT flow: total subjects → candidates (≥1 ONCE codified event) → MAP cases → MAP controls
-- Report MAP score distribution — show the bimodal shape if present (cases cluster near 1, controls near 0)
-- Compare top features between cases (`phenotype=1`) and controls (`phenotype=0`) — feature prevalence bar chart
+**After cohort is defined:**
+- Report CONSORT flow: total subjects → candidates → cases → controls
+- Compare top features between cases and controls — feature prevalence bar chart
 
 ---
 
@@ -299,13 +277,12 @@ Stop and reconsider if you see:
 - **"Complete cases only (N drops from X to Y)"** → Selection bias risk; check if excluded patients differ
 - **"47 significant associations"** → Multiple comparisons; apply FDR correction
 - **"Small sample (n=12) but p < 0.05"** → Likely false positive; report with caution
-- **MAP returns NA log-likelihood** → Sparsity problem; lower `min_nonzero` or remove sparse columns
 
 ---
 
 ## After Completion
 
-1. Save a brief `RESULTS.md` to `output_dir` with: cohort size, MAP score summary, key characterization findings
+1. Save a brief `RESULTS.md` to `output_dir` with: cohort size, key characterization findings
 2. Summarize key findings in the terminal
 3. Acknowledge limitations — especially ICD coverage gaps and NLP sensitivity/specificity tradeoffs
 4. If downstream analysis is planned, suggest it as a new study version (`v2`) or a separate session
