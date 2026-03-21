@@ -45,6 +45,18 @@ print(f"Candidates: {len(candidate_ids)}")
 
 ## Step 3 — Load Notes from BigQuery (Candidates Only)
 
+> **Backend switch required.** Tabular EHR data (diagnoses, admissions, procedures) uses the local DuckDB backend. Clinical notes live in BigQuery. Explicitly switch backends when crossing between them — forgetting this is a common source of silent errors.
+>
+> ```python
+> # Tabular EHR (local DuckDB) — used in mimic-preprocessing
+> set_active_backend("duckdb")
+> set_dataset("mimic-iv-demo")  # or "mimic-iv"
+>
+> # Switch to BigQuery for notes
+> set_active_backend("bigquery")
+> set_dataset("mimic-iv-note")
+> ```
+
 Discharge notes are in `mimic-iv-note` on BigQuery. Always filter to candidate
 patients in the SQL query — the full notes table is too large to pull wholesale.
 The `IN (...)` list approach is practical up to ~5K subjects; for larger sets
