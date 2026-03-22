@@ -1,6 +1,6 @@
 ---
 name: clinical-research-session
-description: Start a structured clinical research session for rule-based cohort building with optional NLP features. Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
+description: Start a structured clinical research session for rule-based cohort building. Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
 ---
 
 # Clinical Research Workflow
@@ -39,10 +39,9 @@ Scripts ARE the science. Create this folder structure at study start:
 output/{study}/
 ├── PROTOCOL.md
 ├── scripts/
-│   ├── cohort_definition.py
-│   ├── nlp_features.py
-│   ├── cohort_assembly.py
-│   └── characterization.py
+│   ├── 01_cohort_definition.py      ← suggested; name freely
+│   ├── 02_feature_matrix.py
+│   └── 03_characterization.py
 ├── data/
 │   ├── cohort.parquet
 │   └── ...
@@ -51,7 +50,7 @@ output/{study}/
     └── ...
 ```
 
-Scripts must be self-contained and independent — each loads what it needs from `data/`.
+Script names should follow the pattern (`NN_name.py`). Name scripts to reflect their purpose. The constraint is that scripts must be self-contained and independent — each loads what it needs from `data/`.
 
 ### Script-First Workflow
 
@@ -65,7 +64,7 @@ Every analysis step that produces a result MUST be executed from a stored script
 Interactive exploration (checking schemas, small test queries to understand data shape) is fine — not everything needs a script. But the moment you produce a result to communicate to the researcher, it must come from a stored script.
 
 **Script requirements:**
-- **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/cohort_definition.py` from the study directory
+- **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/01_cohort_definition.py` from the study directory
 - **Relative paths**: use `out = Path(__file__).resolve().parent.parent` to locate `data/` and `plots/`
 - **Saves outputs**: `.parquet` to `data/`, Plotly figures as `.json` to `plots/` via `fig.write_json()` (never `.html` or `.png`)
 - **Plotly reload**: `plotly.io.from_json(open("plots/fig.json").read())` to reconstruct a `Figure` from disk
@@ -99,12 +98,6 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - `mimic-iv` (full)
 - `mimic-iv-demo` (100 patients, for testing/development)
 
-**NLP / notes:**
-- Should clinical notes be used for NLP CUI features? (improves sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
-
-**ONCE narrative CUIs:**
-- If NLP is enabled, is the ONCE narrative CUI file available in `input/`? (needed for MedSpaCy CUI matching)
-
 **Exclusion criteria** (multiple allowed):
 - Age < 18
 - Missing key variables
@@ -120,7 +113,6 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 Review answers in the terminal. Key refinements to consider:
 - **Anchor ICD/PheCode** — Confirm it exists before proceeding
 - **Dataset** — Recommend demo for first runs; switch to full MIMIC-IV once the pipeline validates
-- **NLP decision** — Confirm whether notes will be used before writing feature-matrix code
 
 ---
 
@@ -146,8 +138,6 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 ### Cohort Definition Approach
 **Method:** Rule-based ICD filter
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
-**NLP:** [Yes — clinical notes / No — structured EHR only]
-**ONCE narrative CUIs:** [narrative file name, or N/A — needed if NLP enabled]
 
 ### Characterization Plan
 1. [Demographics — age distribution, sex, race]
@@ -203,12 +193,6 @@ fig = pio.from_json(open(output_dir / "plots" / "age_distribution.json").read())
 
 Preferred plot types for cohort characterization: CONSORT flow (annotated diagram or table), demographic bar charts, feature prevalence comparison (cases vs controls).
 
-**CONSORT flow stages** (include only stages that apply to the study):
-1. Total patients in dataset
-2. After structured EHR filtering (anchor phenotype candidates identified)
-3. After exclusion criteria applied (age, missing data, etc.)
-4. After NLP/notes filtering (if enabled) → final case and control counts
-
 ### Reproducibility
 
 - **Write → run → report.** Never report results from throwaway interactive code.
@@ -218,17 +202,6 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 ---
 
 ## M4 Skills Reference
-
-### Data Preparation Pipeline
-
-Steps must run in order — each step depends on the output of the previous.
-
-| Step | Skill | What it does | Input | Output |
-|------|-------|-------------|-------|--------|
-| 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables | `obs_log` |
-| 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes | `obs_log` + `event_type="cui"` rows |
-
-**ONCE narrative CUIs:** If NLP is enabled, place the ONCE narrative CUI file in `input/` before running `nlp_features.py`.
 
 ### Data & Methodology
 | Skill | When to Use |
@@ -248,32 +221,22 @@ Steps must run in order — each step depends on the output of the previous.
 
 **Interview (ask in one batch):**
 - Which dataset — `mimic-iv` or `mimic-iv-demo` for development?
-- Should clinical notes be used for NLP CUI features?
 - Any exclusion criteria (e.g. age < 18)?
 
 **After response:**
 - Confirm the anchor ICD/PheCode exists in the data
-- Note NLP decision
 
 **Draft protocol → show to researcher → wait for approval**
 
-**Execute — three scripts:**
+**Execute — two suggested scripts:**
 
 ```
-cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
-                         build obs_log via mimic-preprocessing;
-                         save obs_log.parquet
+01_cohort_definition.py  ← m4-api: pull diagnoses_icd, apply ICD/PheCode filter,
+                            apply exclusion criteria;
+                            save cohort.parquet (cases + controls)
 
-nlp_features.py       ← [if NLP enabled]: load obs_log.parquet; filter candidates,
-                         fetch notes, run MedSpaCy NER via mimic-note-preprocessing,
-                         append CUI rows; save obs_log_with_nlp.parquet
-
-cohort_assembly.py    ← load obs_log.parquet (or obs_log_with_nlp.parquet if NLP enabled);
-                         apply inclusion/exclusion criteria;
-                         save cohort.parquet (cases + controls)
-
-characterization.py   ← load cohort.parquet; age histogram, sex/race bar charts,
-                         top-10 comorbidities
+02_characterization.py   ← load cohort.parquet; age histogram, sex/race bar charts,
+                            top-10 comorbidities
 ```
 
 **After cohort is defined:**
@@ -296,5 +259,5 @@ Stop and reconsider if you see:
 
 1. Save a brief `RESULTS.md` to `output_dir` with: cohort size, key characterization findings
 2. Summarize key findings in the terminal
-3. Acknowledge limitations — especially ICD coverage gaps and NLP sensitivity/specificity tradeoffs
+3. Acknowledge limitations — especially ICD coverage gaps and coding completeness
 4. If downstream analysis is planned, suggest it as a new study version (`v2`) or a separate session

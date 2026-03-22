@@ -86,7 +86,7 @@ nlp_obs = notes_to_events(
     subject_col       = "subject_id",    # default
     max_note_chars    = 10_000,          # truncate per note for speed (None = no truncation)
     notes_per_patient = 3,               # N most recent notes per patient (None = all)
-    n_process         = os.cpu_count(),  # use all cores
+    n_process         = os.cpu_count()-1,  # multiprocessing
 )
 # Returns obs_log rows: subject_id, event_type="cui", event="CUI:C0003873", value=None, datetime
 ```
@@ -97,7 +97,7 @@ nlp_obs = notes_to_events(
 |---|---|---|
 | `max_note_chars` | None | Truncate each note before NLP. `10_000` covers PMH + meds (~86% of avg MIMIC note). Speeds up MedSpaCy ~4–6×. |
 | `notes_per_patient` | None | Keep N most recent notes per patient. Use to ensure all candidates get coverage instead of a flat total cap. `3` is a good starting point. |
-| `n_process` | 1 | Workers for `nlp.pipe()`. Always set to `os.cpu_count()` in scripts. (Keep at `1` only in Jupyter notebooks where fork-based multiprocessing can deadlock.) |
+| `n_process` | 1 | Workers for `nlp.pipe()`. Always set to `os.cpu_count()-1` in scripts. (Keep at `1` only in Jupyter notebooks where fork-based multiprocessing can deadlock.) |
 | `batch_size` | 256 | Texts buffered per spaCy batch. 256 is a good default; no recall impact. |
 
 ## Effect on Cohort Identification

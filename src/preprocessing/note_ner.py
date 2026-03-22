@@ -1,12 +1,12 @@
 import math
 import multiprocessing as mp
-
 import pandas as pd
 from tqdm.auto import tqdm
-
+import logging
 from loguru import logger as _loguru_logger
 
 _loguru_logger.disable("PyRuSH")
+logging.getLogger("PyRuSH").setLevel(logging.ERROR)
 
 
 def _process_chunk(args):
@@ -27,14 +27,16 @@ def _process_chunk(args):
         date_column,
         max_note_chars,
         batch_size,
+        chunk_idx,
     ) = args
 
     import medspacy
     from medspacy.target_matcher import TargetRule
+    import logging
     from loguru import logger as _lgr
 
     _lgr.disable("PyRuSH")
-
+    logging.getLogger("PyRuSH").setLevel(logging.ERROR)
     nlp = medspacy.load()
     nlp.get_pipe("medspacy_target_matcher").add(
         [TargetRule(literal=item["term"], category=item["cui"]) for item in target_cuis]
@@ -52,9 +54,16 @@ def _process_chunk(args):
     )
 
     extracted = []
-    for doc, row_id, row_date in zip(
-        nlp.pipe(texts, batch_size=batch_size, n_process=1), ids, dates
-    ):
+    pipe = tqdm(
+        nlp.pipe(texts, batch_size=batch_size, n_process=1),
+        total=len(texts),
+        desc=f"  Worker {chunk_idx}",
+        unit="note",
+        position=chunk_idx,
+        leave=True,
+        dynamic_ncols=True,
+    )
+    for doc, row_id, row_date in zip(pipe, ids, dates):
         for ent in doc.ents:
             if not ent._.is_negated and not ent._.is_family:
                 record = {id_column: row_id, "cui": ent.label_, "count": 1}
@@ -127,22 +136,15 @@ def extract_cui_features(
                 date_column,
                 max_note_chars,
                 batch_size,
+                idx,
             )
-            for chunk in chunks
+            for idx, chunk in enumerate(chunks)
         ]
 
         print(f"  Parallel NLP: {len(chunks)} workers × ~{chunk_size} notes")
         ctx = mp.get_context("fork")
         with ctx.Pool(processes=len(chunks)) as pool:
-            results = list(
-                tqdm(
-                    pool.imap(_process_chunk, args_list),
-                    total=len(args_list),
-                    desc="  MedSpaCy chunks",
-                    unit="chunk",
-                    dynamic_ncols=True,
-                )
-            )
+            results = list(pool.imap(_process_chunk, args_list))
 
         extracted_data = [rec for chunk_result in results for rec in chunk_result]
 
