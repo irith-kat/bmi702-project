@@ -129,7 +129,7 @@ Review answers in the terminal. Key refinements to consider:
 |--------|--------------|
 | ONCE files available | MAP |
 | ≥1,000 candidates expected | MAP |
-| ICD specificity known to be low (e.g. RA ~58% PPV) | MAP |
+| ICD specificity known to be low | MAP |
 | Need per-patient probability scores | MAP |
 | No ONCE files / exploratory / pilot | Rule-based |
 | Small dataset (<200 candidates) | Rule-based |
@@ -163,7 +163,7 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
 **ONCE files:** [codified file name, narrative file name, or N/A]
-**MAP rationale:** [why MAP over rule-based — e.g. "RA ICD specificity ~58%; ONCE files available; ≥1k candidates"]
+**MAP rationale:** [why MAP over rule-based]
 **MAP config:** [min_nonzero threshold; NLP contribution expected: high / low / unknown]
 
 ### Characterization Plan
