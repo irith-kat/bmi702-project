@@ -49,7 +49,7 @@ map_results = run_map(mat_df, note_df, "PheCode:714.1")
 case_ids = set(map_results[map_results["phenotype"] == 1]["patient_id"])
 ```
 
-**When to use:** final cohort for a study, when ICD specificity is known to be low (e.g. RA: ~58% PPV for multiple ICD codes), or when NLP features are available to boost sensitivity.
+**When to use:** final cohort for a study, when ICD specificity is known to be low, or when NLP features are available to boost sensitivity.
 
 ## MAP Without NLP vs With NLP
 
