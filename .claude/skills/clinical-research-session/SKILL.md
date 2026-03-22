@@ -39,9 +39,9 @@ Scripts ARE the science. Create this folder structure at study start:
 output/{study}/
 ├── PROTOCOL.md
 ├── scripts/
-│   ├── 01_cohort_definition.py      ← suggested; name freely
-│   ├── 02_feature_matrix.py
-│   └── 03_characterization.py
+│   ├── cohort_definition.py
+│   ├── map_phenotyping.py
+│   └── characterization.py
 ├── data/
 │   ├── cohort.parquet
 │   └── ...
@@ -50,7 +50,7 @@ output/{study}/
     └── ...
 ```
 
-Script names should follow the pattern (`NN_name.py`). Name scripts to reflect their purpose. The constraint is that scripts must be self-contained and independent — each loads what it needs from `data/`.
+Scripts must be self-contained and independent — each loads what it needs from `data/`.
 
 ### Script-First Workflow
 
@@ -64,7 +64,7 @@ Every analysis step that produces a result MUST be executed from a stored script
 Interactive exploration (checking schemas, small test queries to understand data shape) is fine — not everything needs a script. But the moment you produce a result to communicate to the researcher, it must come from a stored script.
 
 **Script requirements:**
-- **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/01_cohort_definition.py` from the study directory
+- **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/cohort_definition.py` from the study directory
 - **Relative paths**: use `out = Path(__file__).resolve().parent.parent` to locate `data/` and `plots/`
 - **Saves outputs**: `.parquet` to `data/`, Plotly figures as `.json` to `plots/` via `fig.write_json()` (never `.html` or `.png`)
 - **Plotly reload**: `plotly.io.from_json(open("plots/fig.json").read())` to reconstruct a `Figure` from disk
@@ -220,6 +220,13 @@ fig = pio.from_json(open(output_dir / "plots" / "age_distribution.json").read())
 
 Preferred plot types for cohort characterization: CONSORT flow (annotated diagram or table), demographic bar charts, feature prevalence comparison (cases vs controls).
 
+**CONSORT flow stages** (include only stages that apply to the study):
+1. Total patients in dataset
+2. After structured EHR filtering (anchor phenotype candidates identified)
+3. After exclusion criteria applied (age, missing data, etc.)
+4. After NLP/notes filtering (if enabled)
+5. After MAP phenotyping → final case and control counts
+
 ### Reproducibility
 
 - **Write → run → report.** Never report results from throwaway interactive code.
@@ -231,6 +238,8 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 ## M4 Skills Reference
 
 ### Data Preparation Pipeline
+
+Steps must run in order — each step depends on the output of the previous.
 
 | Step | Skill | What it does | Input | Output |
 |------|-------|-------------|-------|--------|
@@ -269,21 +278,22 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 
 **Draft protocol → show to researcher → wait for approval**
 
-**Execute — three suggested scripts:**
+**Execute — three scripts:**
 
 ```
-01_cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
-                            build obs_log via mimic-preprocessing;
-                            load ONCE codified features;
-                            run map-phenotyping (preprocess_map + run_map) → map_results.parquet;
-                            save cohort.parquet (cases + controls)
+cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
+                         build obs_log via mimic-preprocessing;
+                         [if NLP enabled]: filter candidates, fetch notes,
+                         run MedSpaCy NER via mimic-note-preprocessing,
+                         append CUI rows to obs_log;
+                         save obs_log.parquet
 
-02_feature_matrix.py     ← mimic-note-preprocessing (if NLP enabled): filter candidates,
-                            fetch notes, run MedSpaCy NER, append CUI rows to obs_log;
-                            load ONCE narrative features; build full feature matrix
+map_phenotyping.py    ← load obs_log.parquet; load ONCE files;
+                         run map-phenotyping (preprocess_map + run_map) → map_results.parquet;
+                         save cohort.parquet (cases + controls)
 
-03_characterization.py   ← describe cases: age histogram, sex/race bar charts,
-                            top-10 comorbidities, top ONCE features cases vs controls
+characterization.py   ← load cohort.parquet; age histogram, sex/race bar charts,
+                         top-10 comorbidities, top ONCE features cases vs controls
 ```
 
 **After cohort is defined:**

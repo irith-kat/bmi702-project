@@ -39,9 +39,8 @@ Scripts ARE the science. Create this folder structure at study start:
 output/{study}/
 ├── PROTOCOL.md
 ├── scripts/
-│   ├── 01_cohort_definition.py      ← suggested; name freely
-│   ├── 02_feature_matrix.py
-│   └── 03_characterization.py
+│   ├── cohort_definition.py
+│   └── characterization.py
 ├── data/
 │   ├── cohort.parquet
 │   └── ...
@@ -50,7 +49,7 @@ output/{study}/
     └── ...
 ```
 
-Script names should follow the pattern (`NN_name.py`). Name scripts to reflect their purpose. The constraint is that scripts must be self-contained and independent — each loads what it needs from `data/`.
+Scripts must be self-contained and independent — each loads what it needs from `data/`.
 
 ### Script-First Workflow
 
@@ -64,7 +63,7 @@ Every analysis step that produces a result MUST be executed from a stored script
 Interactive exploration (checking schemas, small test queries to understand data shape) is fine — not everything needs a script. But the moment you produce a result to communicate to the researcher, it must come from a stored script.
 
 **Script requirements:**
-- **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/01_cohort_definition.py` from the study directory
+- **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/cohort_definition.py` from the study directory
 - **Relative paths**: use `out = Path(__file__).resolve().parent.parent` to locate `data/` and `plots/`
 - **Saves outputs**: `.parquet` to `data/`, Plotly figures as `.json` to `plots/` via `fig.write_json()` (never `.html` or `.png`)
 - **Plotly reload**: `plotly.io.from_json(open("plots/fig.json").read())` to reconstruct a `Figure` from disk
@@ -204,6 +203,13 @@ fig = pio.from_json(open(output_dir / "plots" / "age_distribution.json").read())
 
 Preferred plot types for cohort characterization: CONSORT flow (annotated diagram or table), demographic bar charts, feature prevalence comparison (cases vs controls).
 
+**CONSORT flow stages** (include only stages that apply to the study):
+1. Total patients in dataset
+2. After anchor phenotype filtering (candidates identified)
+3. After exclusion criteria applied (age, missing data, etc.)
+4. After any additional filtering steps
+5. Final cohort → case and control counts (or final included patients if no control group)
+
 ### Reproducibility
 
 - **Write → run → report.** Never report results from throwaway interactive code.
@@ -251,20 +257,18 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 
 **Draft protocol → show to researcher → wait for approval**
 
-**Execute — three suggested scripts:**
+**Execute — two scripts:**
 
 ```
-01_cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
-                            build obs_log via mimic-preprocessing;
-                            apply ICD/PheCode count threshold to obs_log;
-                            save cohort.parquet (cases + controls)
+cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
+                         build obs_log via mimic-preprocessing;
+                         [if NLP enabled]: filter candidates, fetch notes,
+                         run MedSpaCy NER via mimic-note-preprocessing,
+                         append CUI rows to obs_log;
+                         apply ICD/PheCode filter → cohort.parquet
 
-02_feature_matrix.py     ← mimic-note-preprocessing (if NLP enabled): filter candidates,
-                            fetch notes, run MedSpaCy NER, append CUI rows to obs_log;
-                            join ONCE features; build feature matrix
-
-03_characterization.py   ← describe cases: age histogram, sex/race bar charts,
-                            top-10 comorbidities, top ONCE features cases vs controls
+characterization.py   ← load cohort.parquet; age histogram, sex/race bar charts,
+                         top-10 comorbidities, feature prevalence cases vs controls
 ```
 
 **After cohort is defined:**

@@ -110,18 +110,18 @@ map_results = run_map(mat_df, note_df, anchor_col)
 ### Suggested Script Structure
 
 ```
-01_cohort_definition.py   ← m4-api: pull subjects, diagnoses_icd, procedures,
-                              prescriptions; build obs_log with mimic-preprocessing
+cohort_definition.py   ← m4-api: pull subjects, diagnoses_icd, procedures,
+                           prescriptions; build obs_log with mimic-preprocessing;
+                           mimic-note-preprocessing (if NLP enabled): filter obs_log
+                           to candidates, fetch notes, run NER, append CUI events;
+                           save obs_log.parquet
 
-02_feature_matrix.py      ← mimic-note-preprocessing (if NLP enabled): filter obs_log
-                              to candidates, fetch notes, run NER, append CUI events;
-                              then preprocess_map → mat_df + note_df
+map_phenotyping.py     ← load obs_log.parquet; preprocess_map → mat_df + note_df;
+                           run_map → scored cohort; apply threshold;
+                           save cohort.parquet
 
-03_map_phenotyping.py     ← run_map → scored cohort; apply threshold;
-                              save cohort.parquet
-
-04_characterization.py    ← describe cases: age histogram, sex/race bar charts,
-                              top-10 comorbidities, top ONCE features cases vs controls
+characterization.py    ← load cohort.parquet; age histogram, sex/race bar charts,
+                           top-10 comorbidities, top ONCE features cases vs controls
 ```
 
 ### Key Checks Before Running MAP
