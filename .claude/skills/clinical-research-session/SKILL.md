@@ -40,6 +40,7 @@ output/{study}/
 ├── PROTOCOL.md
 ├── scripts/
 │   ├── cohort_definition.py
+│   ├── nlp_features.py
 │   ├── map_phenotyping.py
 │   └── characterization.py
 ├── data/
@@ -283,12 +284,13 @@ Steps must run in order — each step depends on the output of the previous.
 ```
 cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
                          build obs_log via mimic-preprocessing;
-                         [if NLP enabled]: filter candidates, fetch notes,
-                         run MedSpaCy NER via mimic-note-preprocessing,
-                         append CUI rows to obs_log;
                          save obs_log.parquet
 
-map_phenotyping.py    ← load obs_log.parquet; load ONCE files;
+nlp_features.py       ← [if NLP enabled]: load obs_log.parquet; filter candidates,
+                         fetch notes, run MedSpaCy NER via mimic-note-preprocessing,
+                         append CUI rows; save obs_log_with_nlp.parquet
+
+map_phenotyping.py    ← load obs_log.parquet (or obs_log_with_nlp.parquet); load ONCE files;
                          run map-phenotyping (preprocess_map + run_map) → map_results.parquet;
                          save cohort.parquet (cases + controls)
 

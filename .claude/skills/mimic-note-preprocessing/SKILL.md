@@ -76,6 +76,8 @@ print(f"Notes fetched: {len(notes_df)} ({notes_df['subject_id'].nunique()} patie
 ## Step 4 — notes_to_events
 
 ```python
+import os
+
 nlp_obs = notes_to_events(
     notes_df          = notes_df,
     text_col          = "text",
@@ -84,7 +86,7 @@ nlp_obs = notes_to_events(
     subject_col       = "subject_id",    # default
     max_note_chars    = 10_000,          # truncate per note for speed (None = no truncation)
     notes_per_patient = 3,               # N most recent notes per patient (None = all)
-    n_process         = 1,               # keep at 1 in Jupyter (multiprocessing can deadlock)
+    n_process         = os.cpu_count(),  # use all cores
 )
 # Returns obs_log rows: subject_id, event_type="cui", event="CUI:C0003873", value=None, datetime
 ```
@@ -95,20 +97,8 @@ nlp_obs = notes_to_events(
 |---|---|---|
 | `max_note_chars` | None | Truncate each note before NLP. `10_000` covers PMH + meds (~86% of avg MIMIC note). Speeds up MedSpaCy ~4–6×. |
 | `notes_per_patient` | None | Keep N most recent notes per patient. Use to ensure all candidates get coverage instead of a flat total cap. `3` is a good starting point. |
-| `n_process` | 1 | Workers for `nlp.pipe()`. **In scripts**, use `os.cpu_count()` for a 4–8× speedup. Keep at 1 in Jupyter notebooks (fork-based multiprocessing deadlocks). |
+| `n_process` | 1 | Workers for `nlp.pipe()`. Always set to `os.cpu_count()` in scripts. (Keep at `1` only in Jupyter notebooks where fork-based multiprocessing can deadlock.) |
 | `batch_size` | 256 | Texts buffered per spaCy batch. 256 is a good default; no recall impact. |
-
-## Runtime Estimates (MIMIC-IV, `max_note_chars=10_000`)
-
-Observed rate: ~1.9 notes/sec on a single core (WSL2, `n_process=1`).
-
-| Notes | Approx time |
-|---|---|
-| 300 | ~3 min |
-| 2,600 (1/patient × 2.6K candidates) | ~23 min |
-| 5,100 (3/patient × 2.6K candidates) | ~45 min |
-| 12,000 (1/patient × 12K candidates) | ~1.75 hr |
-| 37,000 (3/patient × 12K candidates) | ~5 hr |
 
 ## Effect on Cohort Identification
 

@@ -1,6 +1,6 @@
 ---
-name: clinical-research-session-base
-description: Start a structured clinical research session for rule-based cohort building. Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
+name: clinical-research-session
+description: Start a structured clinical research session for rule-based cohort building with optional NLP features. Use when users describe research goals, want to analyze cohorts, investigate hypotheses, or need a rigorous research plan. Interviews the user, then produces a research protocol.
 ---
 
 # Clinical Research Workflow
@@ -40,6 +40,8 @@ output/{study}/
 ├── PROTOCOL.md
 ├── scripts/
 │   ├── cohort_definition.py
+│   ├── nlp_features.py
+│   ├── cohort_assembly.py
 │   └── characterization.py
 ├── data/
 │   ├── cohort.parquet
@@ -100,8 +102,8 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 **NLP / notes:**
 - Should clinical notes be used for NLP CUI features? (improves sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
 
-**ONCE files:**
-- Are ONCE files available in `input/`? (generate at https://shiny.parse-health.org/ONCE/ if not)
+**ONCE narrative CUIs:**
+- If NLP is enabled, is the ONCE narrative CUI file available in `input/`? (needed for MedSpaCy CUI matching)
 
 **Exclusion criteria** (multiple allowed):
 - Age < 18
@@ -111,7 +113,6 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 **Characterization goals** (if cohort characterization is in scope):
 - Demographics (age, sex, race)
 - Comorbidities (top ICD clusters, Charlson/Elixhauser)
-- Top ONCE features present in cases vs controls
 - Temporal patterns (admission trends, seasonality)
 
 ### After the Interview
@@ -146,13 +147,12 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Method:** Rule-based ICD filter
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
-**ONCE files:** [codified file name, narrative file name, or N/A]
+**ONCE narrative CUIs:** [narrative file name, or N/A — needed if NLP enabled]
 
 ### Characterization Plan
 1. [Demographics — age distribution, sex, race]
 2. [Top comorbidities]
-3. [Top ONCE features in cases vs controls]
-4. [Other planned summaries]
+3. [Other planned summaries]
 
 ### Potential Limitations
 - [Known limitation]
@@ -205,10 +205,9 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 
 **CONSORT flow stages** (include only stages that apply to the study):
 1. Total patients in dataset
-2. After anchor phenotype filtering (candidates identified)
+2. After structured EHR filtering (anchor phenotype candidates identified)
 3. After exclusion criteria applied (age, missing data, etc.)
-4. After any additional filtering steps
-5. Final cohort → case and control counts (or final included patients if no control group)
+4. After NLP/notes filtering (if enabled) → final case and control counts
 
 ### Reproducibility
 
@@ -222,12 +221,14 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 
 ### Data Preparation Pipeline
 
+Steps must run in order — each step depends on the output of the previous.
+
 | Step | Skill | What it does | Input | Output |
 |------|-------|-------------|-------|--------|
 | 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables | `obs_log` |
 | 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes | `obs_log` + `event_type="cui"` rows |
 
-**ONCE files:** Place codified and narrative feature files in `input/`. Generate at https://shiny.parse-health.org/ONCE/ if not present. Enable `phenotyping_features = True` to reduce noise.
+**ONCE narrative CUIs:** If NLP is enabled, place the ONCE narrative CUI file in `input/` before running `nlp_features.py`.
 
 ### Data & Methodology
 | Skill | When to Use |
@@ -249,7 +250,6 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 - Which dataset — `mimic-iv` or `mimic-iv-demo` for development?
 - Should clinical notes be used for NLP CUI features?
 - Any exclusion criteria (e.g. age < 18)?
-- Are ONCE files available in `input/`?
 
 **After response:**
 - Confirm the anchor ICD/PheCode exists in the data
@@ -257,18 +257,23 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 
 **Draft protocol → show to researcher → wait for approval**
 
-**Execute — two scripts:**
+**Execute — three scripts:**
 
 ```
 cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
                          build obs_log via mimic-preprocessing;
-                         [if NLP enabled]: filter candidates, fetch notes,
-                         run MedSpaCy NER via mimic-note-preprocessing,
-                         append CUI rows to obs_log;
-                         apply ICD/PheCode filter → cohort.parquet
+                         save obs_log.parquet
+
+nlp_features.py       ← [if NLP enabled]: load obs_log.parquet; filter candidates,
+                         fetch notes, run MedSpaCy NER via mimic-note-preprocessing,
+                         append CUI rows; save obs_log_with_nlp.parquet
+
+cohort_assembly.py    ← load obs_log.parquet (or obs_log_with_nlp.parquet if NLP enabled);
+                         apply inclusion/exclusion criteria;
+                         save cohort.parquet (cases + controls)
 
 characterization.py   ← load cohort.parquet; age histogram, sex/race bar charts,
-                         top-10 comorbidities, feature prevalence cases vs controls
+                         top-10 comorbidities
 ```
 
 **After cohort is defined:**
