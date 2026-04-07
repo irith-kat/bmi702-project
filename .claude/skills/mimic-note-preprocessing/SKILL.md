@@ -12,10 +12,8 @@ Negated and family-history mentions are excluded automatically by MedSpaCy's con
 ## Setup
 
 ```python
-import sys
-sys.path.insert(0, "path/to/src/preprocessing")
-from preprocessing import notes_to_events
-from once import get_once_features
+from src.preprocessing.structured.preprocessing import notes_to_events
+from src.preprocessing.nlp.once import get_once_features
 from m4 import set_dataset, execute_query
 from m4.config import set_active_backend
 ```

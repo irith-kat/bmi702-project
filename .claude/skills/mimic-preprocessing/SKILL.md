@@ -5,7 +5,7 @@ description: Preprocess structured MIMIC-IV data (diagnoses, prescriptions, proc
 
 # MIMIC Structured Data Preprocessing
 
-All functions in `src/preprocessing/preprocessing.py` produce a standardized **observation log** — a long-format DataFrame with five columns:
+All functions in `src/preprocessing/structured/preprocessing.py` produce a standardized **observation log** — a long-format DataFrame with five columns:
 
 | Column | Type | Description |
 |---|---|---|
@@ -19,8 +19,7 @@ All functions in `src/preprocessing/preprocessing.py` produce a standardized **o
 
 ```python
 import sys
-sys.path.insert(0, "path/to/src/preprocessing")
-from preprocessing import icd_to_events, drug_to_events, cpt_to_events, build_obs_log
+from src.preprocessing.structured.preprocessing import icd_to_events, drug_to_events, cpt_to_events, build_obs_log
 ```
 
 ## ICD Diagnoses → PheCodes
