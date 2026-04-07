@@ -112,7 +112,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 
 **Characterization goals** (if cohort characterization is in scope):
 - Demographics (age, sex, race)
-- Comorbidities (top ICD clusters, Charlson/Elixhauser)
+- Comorbidities (top ICD clusters, etc.)
 - Top ONCE features present in cases vs controls
 - Temporal patterns (admission trends, seasonality)
 
