@@ -9,7 +9,7 @@ Structured cohort building from research question through characterization. All 
 
 ## When This Skill Activates
 
-- User invokes `/research` command
+- User invokes `/clinical-research-session` command
 - User describes research intent: "I want to study...", "Can we analyze...", "Find patients with..."
 - User mentions cohort analysis, cohort characterization, or disease identification
 
