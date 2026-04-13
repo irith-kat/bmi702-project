@@ -13,6 +13,9 @@ dependencies = [
     "scipy>=1.17.1",
     "vitrine>=0.1.0",
     "plotly>=6.6.0",
+    "tensorflow>=2.21.0",
+    "scikit-learn>=1.8.0",
+    "google-cloud-aiplatform>=1.60.0",
 ]
 
 [build-system]
