@@ -216,3 +216,17 @@ m4_data/
 mapping_dicts/*.csv
 mapping_dicts/*/*.csv
 output/
+
+# LATTE-main
+src/LATTE-main/LATTE-main/a_train_final_sim.py
+src/LATTE-main/LATTE-main/generate_Sigma.py
+src/LATTE-main/LATTE-main/gen_Data_SIM.R
+src/LATTE-main/LATTE-main/get_Folds.R
+src/LATTE-main/LATTE-main/pack_prepare.R
+src/LATTE-main/LATTE-main/simulation_data_functions_v4.R
+src/LATTE-main/LATTE-main/example/
+src/LATTE-main/LATTE-main/data/
+src/LATTE-main/LATTE-main/Simulation/
+src/LATTE-main/LATTE-main/Input_example.csv
+src/LATTE-main/LATTE-main/embedding_example.csv
+src/LATTE-main/LATTE-main/Simulation_runmodel_descript.txt
