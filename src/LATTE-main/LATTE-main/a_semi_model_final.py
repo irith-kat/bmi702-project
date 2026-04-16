@@ -1495,7 +1495,9 @@ def Attention_train(
                 # use threshold to decide positive & negative sample
 
                 tn, fp, fn, tp = confusion_matrix(
-                    labels_MLP_total_test, Prevalence_prediction_total_test_binary
+                    labels_MLP_total_test,
+                    Prevalence_prediction_total_test_binary,
+                    labels=[0, 1],
                 ).ravel()
                 specificity_test_MLP = tn / (tn + fp)
                 sensitivity_test_MLP = tp / (tp + fn)
@@ -1577,7 +1579,7 @@ def Attention_train(
                     y_true_get_test, score_get_test, average="macro"
                 )
                 tn, fp, fn, tp = confusion_matrix(
-                    y_true_get_test, score_get_test_binary
+                    y_true_get_test, score_get_test_binary, labels=[0, 1]
                 ).ravel()
                 specificity = tn / (tn + fp)
                 sensitivity = tp / (tp + fn)
