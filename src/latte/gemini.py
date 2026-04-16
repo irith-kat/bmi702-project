@@ -43,6 +43,11 @@ DEFAULT_LOCATION = "global"  # 3.1 preview not yet available in us-central1
 # ---------------------------------------------------------------------------
 
 
+def get_cached_subject_ids(cache_jsonl: str) -> set[str]:
+    """Return the set of subject_ids already present in a labeling cache file."""
+    return _load_cache(cache_jsonl)
+
+
 def _load_cache(cache_jsonl: str) -> set[str]:
     """Return the set of subject_ids already present in the cache file."""
     completed: set[str] = set()
@@ -87,6 +92,8 @@ def run_gemini_labeling(
     max_notes_per_patient: int | None = None,
     retry_delay_seconds: float = 5.0,
     max_retries: int = 3,
+    record_builder=None,
+    system_instruction_builder=None,
 ) -> int:
     """
     Label patients using the Gemini API, caching results to a local JSONL file.
@@ -139,7 +146,10 @@ def run_gemini_labeling(
 
     from .labeler_utils import build_system_instruction
 
-    system_instruction = build_system_instruction(config)
+    _si_builder = system_instruction_builder or build_system_instruction
+    _rec_builder = record_builder or build_result_record
+
+    system_instruction = _si_builder(config)
     gen_config = genai_types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0,
@@ -192,7 +202,7 @@ def run_gemini_labeling(
             )
             _append_cache(cache_jsonl, {**error_record(sid_str), "subject_id": sid_str})
         else:
-            record = build_result_record(parsed, sid_str)
+            record = _rec_builder(parsed, sid_str)
             _append_cache(cache_jsonl, record)
 
         newly_labeled += 1
@@ -314,5 +324,91 @@ def parse_gemini_results(
         n_errors,
         (result_df["label"] == 1).sum(),
         (result_df["label"] == 0).sum(),
+    )
+    return result_df
+
+
+def parse_gemini_recurring_results(
+    cache_jsonl: str,
+    baseline_date: str,
+    month_window: int = 3,
+) -> pd.DataFrame:
+    """
+    Read a recurring-event cache JSONL and return a DataFrame ready for
+    recurring_labels_to_latte().
+
+    Columns: subject_id, label, event_Ts (list[int]), parse_error.
+    event_Ts contains the integer time-window indices at which events occurred,
+    computed from baseline_date and month_window.
+    """
+    import numpy as np
+
+    base_dt = pd.to_datetime(baseline_date)
+    records: list[dict] = []
+
+    try:
+        with open(cache_jsonl, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    logger.warning("Could not parse cache line: %s", exc)
+                    records.append(
+                        {
+                            "subject_id": "",
+                            "label": -1,
+                            "event_Ts": [],
+                            "parse_error": True,
+                        }
+                    )
+                    continue
+
+                if obj.get("parse_error"):
+                    records.append(
+                        {
+                            "subject_id": obj.get("subject_id", ""),
+                            "label": -1,
+                            "event_Ts": [],
+                            "parse_error": True,
+                        }
+                    )
+                    continue
+
+                event_cts = obj.get("event_charttimes") or []
+                event_Ts: list[int] = []
+                for ct_str in event_cts:
+                    try:
+                        ct = pd.to_datetime(ct_str)
+                        t = int(np.floor((ct - base_dt).days / (30.44 * month_window)))
+                        event_Ts.append(t)
+                    except Exception:
+                        pass
+
+                records.append(
+                    {
+                        "subject_id": str(obj.get("subject_id", "")),
+                        "label": int(obj.get("label", -1)),
+                        "event_Ts": event_Ts,
+                        "parse_error": False,
+                    }
+                )
+    except FileNotFoundError:
+        logger.warning("Cache file not found: %s", cache_jsonl)
+
+    result_df = pd.DataFrame(records)
+    if result_df.empty:
+        logger.warning("No results in recurring-event cache %s.", cache_jsonl)
+        return result_df
+
+    n_parsed = (~result_df["parse_error"]).sum()
+    n_events = result_df["event_Ts"].apply(len).sum()
+    logger.info(
+        "Recurring-event results: %d/%d patients parsed, %d total events identified.",
+        n_parsed,
+        len(result_df),
+        n_events,
     )
     return result_df

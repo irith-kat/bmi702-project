@@ -1,10 +1,15 @@
 from .labeler_utils import (
     DiseaseConfig as DiseaseConfig,
     HF_DISEASE_CONFIG as HF_DISEASE_CONFIG,
+    HF_DECOMP_DISEASE_CONFIG as HF_DECOMP_DISEASE_CONFIG,
     labels_to_latte as labels_to_latte,
+    recurring_labels_to_latte as recurring_labels_to_latte,
+    map_prefilter as map_prefilter,
     parse_discharge_summaries as parse_discharge_summaries,
     silver_prefilter as silver_prefilter,
     validate_against_principal_dx as validate_against_principal_dx,
+    build_result_record_recurring as build_result_record_recurring,
+    build_system_instruction_recurring as build_system_instruction_recurring,
 )
 from .medgemma import (
     build_patient_jsonl as build_patient_jsonl,
@@ -17,6 +22,8 @@ from .medgemma import (
 from .gemini import (
     run_gemini_labeling as run_gemini_labeling,
     parse_gemini_results as parse_gemini_results,
+    parse_gemini_recurring_results as parse_gemini_recurring_results,
+    get_cached_subject_ids as get_cached_subject_ids,
 )
 from .latte import (
     format_latte_input as format_latte_input,

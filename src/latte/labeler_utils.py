@@ -84,6 +84,39 @@ _DEFAULT_SCHEMA_EXAMPLE = """{
   "label": 0
 }"""
 
+_RECURRING_SCHEMA_EXAMPLE = """{
+  "subject_id": "10001919",
+  "reasoning": "Admission 1 (2124-04-21): Stable follow-up. No event signs.\\nAdmission 2 (2124-07-15): Active event: BNP 1200 pg/mL, IV furosemide initiated.\\nAdmission 3 (2124-11-03): Elective procedure. No event documented.",
+  "timeline": [
+    {
+      "visit_id": 1,
+      "hadm_id": "29897682",
+      "charttime": "2124-04-21",
+      "status": 0,
+      "confidence": "high",
+      "evidence": "Stable maintenance visit. No active event criteria met."
+    },
+    {
+      "visit_id": 2,
+      "hadm_id": "38871234",
+      "charttime": "2124-07-15",
+      "status": 1,
+      "confidence": "high",
+      "evidence": "Active event: BNP 1200 pg/mL, bilateral crackles, IV furosemide started."
+    },
+    {
+      "visit_id": 3,
+      "hadm_id": "41023456",
+      "charttime": "2124-11-03",
+      "status": 0,
+      "confidence": "high",
+      "evidence": "Elective procedure. No event criteria met."
+    }
+  ],
+  "event_visit_ids": [2],
+  "label": 1
+}"""
+
 
 # ---------------------------------------------------------------------------
 # Default Heart Failure configuration
@@ -113,6 +146,34 @@ HF_DISEASE_CONFIG = DiseaseConfig(
         "null and label to 0."
     ),
     key_codes=["PheCode:428", "PheCode:428.1"],
+)
+
+HF_DECOMP_DISEASE_CONFIG = DiseaseConfig(
+    name="Heart Failure (HF) Decompensation",
+    icd_codes="ICD-10: I50.x  |  ICD-9: 428.x",
+    diagnostic_criteria="""
+- Initiation or escalation of IV loop diuretics (furosemide/Lasix, bumetanide, torsemide)
+  for volume overload — not routine oral maintenance
+- BNP > 400 pg/mL or NT-proBNP > 900 pg/mL documented in notes
+- Explicit language: "acute decompensated heart failure", "ADHF", "acute on chronic HF",
+  "decompensated CHF", "volume overload requiring admission"
+- Pulmonary oedema on imaging attributed to fluid overload
+- Clinical signs of congestion: bilateral crackles, peripheral oedema, orthopnoea, PND,
+  JVD — all in the context of known HF""",
+    incident_definition=(
+        "A DECOMPENSATION EVENT is any hospital admission at which the patient presents "
+        "with acute worsening of known Heart Failure requiring IV diuresis or urgent "
+        "intervention, with clinical or laboratory evidence of volume overload.  "
+        "A patient may have MULTIPLE decompensation events across different admissions — "
+        "mark EVERY admission that meets the criterion as status=1.  "
+        "Routine chronic HF follow-up, outpatient-equivalent care, or admissions "
+        "primarily for other conditions are status=0."
+    ),
+    key_codes=[
+        "LOINC:33762-6",
+        "ShortName:BNP",
+    ],  # NT-proBNP / BNP → silver label anchor
+    output_schema_example=_RECURRING_SCHEMA_EXAMPLE,
 )
 
 
@@ -182,8 +243,72 @@ USER_TURN_TEMPLATE = """\
 """
 
 
+RECURRING_SYSTEM_INSTRUCTION_TEMPLATE = """\
+You are a senior clinical physician with expertise in {disease_name} conducting a \
+structured chart review of longitudinal hospital discharge summaries.
+
+## Your Task
+Identify EVERY admission in this patient's history that qualifies as a \
+{disease_name} event.  A patient may have zero, one, or many such events.
+
+For reference, the relevant ICD codes are: {icd_codes}.
+Do not rely on code presence alone — base your judgment on the full clinical picture.
+
+## Event Criteria
+{diagnostic_criteria}
+
+## Event Definition
+{incident_definition}
+
+## Instructions — Chain-of-Thought Required
+Work through the admissions in strict chronological order.
+
+### STEP 1 — Per-Admission Evidence Extraction
+For EACH admission (in the order they appear), write a brief structured note covering:
+  a) Relevant diagnoses or clinical impressions
+  b) Relevant medications started, escalated, or changed
+  c) Relevant laboratory values or biomarkers
+  d) Relevant imaging or procedure findings
+  e) Whether event-specific language appears explicitly in the text
+
+### STEP 2 — Per-Admission Status Judgment
+After extracting evidence, assign:
+  status=1 if this admission qualifies as a {disease_name} event (meets criteria above)
+  status=0 if this is a routine or unrelated admission
+  Also assign a confidence: "high", "moderate", or "low"
+
+### STEP 3 — Event List
+List the visit_ids (1-based integers) of ALL admissions with status=1.
+If no admission qualifies, set event_visit_ids to [].
+Set label=1 if the list is non-empty, else label=0.
+
+### STEP 4 — Final JSON Output
+Output ONLY valid JSON (no markdown fences, no trailing text) using this exact schema:
+{output_schema_example}
+
+IMPORTANT:
+- The "reasoning" field should contain your Step 1–2 work (plain text, may be long).
+- The "timeline" array must have one entry per admission in chronological order.
+- visit_id is a 1-based integer (1 = earliest admission).
+- "status" must be 0 or 1 (integer).
+- "event_visit_ids" is a list of integers (may be empty []).
+- "label" is 1 if event_visit_ids is non-empty, else 0.
+- Output ONLY the JSON object — do not add any text before or after it.\
+"""
+
+
 def build_system_instruction(config: DiseaseConfig) -> str:
     return SYSTEM_INSTRUCTION_TEMPLATE.format(
+        disease_name=config.name,
+        icd_codes=config.icd_codes,
+        diagnostic_criteria=config.diagnostic_criteria.strip(),
+        incident_definition=config.incident_definition.strip(),
+        output_schema_example=config.output_schema_example,
+    )
+
+
+def build_system_instruction_recurring(config: DiseaseConfig) -> str:
+    return RECURRING_SYSTEM_INSTRUCTION_TEMPLATE.format(
         disease_name=config.name,
         icd_codes=config.icd_codes,
         diagnostic_criteria=config.diagnostic_criteria.strip(),
@@ -324,6 +449,130 @@ def parse_discharge_summaries(notes_file: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+def map_prefilter(
+    map_results: pd.DataFrame,
+    n_cases: int = 150,
+    n_controls: int = 150,
+    patient_col: str = "patient_id",
+    phenotype_col: str = "phenotype",
+    icd_coded_col: str = "icd_coded",
+    seed: int = 42,
+    valid_sids: set[str] | None = None,
+    preferred_sids: set[str] | None = None,
+) -> dict[str, list]:
+    """
+    Use MAP posterior scores to select gold label candidates for LATTE.
+
+    This is the preferred prefilter when MAP has already been run.  It produces
+    better candidates than ``silver_prefilter`` for disease-specific cohorts
+    (where everyone already has the anchor ICD code and silver scores carry no
+    discriminative signal).
+
+    Parameters
+    ----------
+    map_results : pd.DataFrame
+        Output of ``run_map()``.  Must have columns:
+        - ``patient_col``  — patient identifier
+        - ``phenotype_col`` — 0/1 MAP label
+        - ``icd_coded_col`` — bool; True if patient has ≥1 anchor ICD event
+    n_cases : int
+        Number of MAP-confirmed cases to sample for gold labeling.
+    n_controls : int
+        Number of MAP-rejected ICD patients to sample for gold labeling.
+        These are patients ICD-coded for the disease but rejected by MAP
+        (probable miscodes / billing artifacts) — high-value negatives.
+    patient_col, phenotype_col, icd_coded_col : str
+        Column names in ``map_results``.
+    seed : int
+        Random seed for reproducible sampling.
+    valid_sids : set[str] | None
+        If provided, restrict sampling to this set of patient IDs.
+        Use to guarantee selected patients have discharge notes before
+        making BigQuery/API calls (avoids silent skips downstream).
+    preferred_sids : set[str] | None
+        If provided, sample from these IDs first (where they qualify),
+        then fill remaining slots from other candidates.
+        Use to prioritise already-cached patients so Gemini API calls
+        are minimised across re-runs.
+
+    Returns
+    -------
+    dict with keys:
+        ``cases_pool``     — list[str] patient IDs sampled from MAP phenotype=1
+        ``controls_pool``  — list[str] patient IDs sampled from MAP phenotype=0
+                             AND icd_coded=True (MAP-rejected ICD cases)
+        ``unlabeled_pool`` — list[str] all remaining patient IDs (LATTE mid-tier)
+    """
+    rng = np.random.default_rng(seed)
+
+    df = map_results.copy()
+    df[patient_col] = df[patient_col].astype(str)
+
+    case_candidates = df[df[phenotype_col] == 1][patient_col].tolist()
+    # Controls: patients ICD-coded for the disease but MAP rejected them —
+    # these are the informative hard negatives for LATTE's supervised loss.
+    control_candidates = df[(df[phenotype_col] == 0) & df[icd_coded_col]][
+        patient_col
+    ].tolist()
+
+    if valid_sids is not None:
+        valid_str = {str(s) for s in valid_sids}
+        n_cases_before, n_controls_before = (
+            len(case_candidates),
+            len(control_candidates),
+        )
+        case_candidates = [p for p in case_candidates if p in valid_str]
+        control_candidates = [p for p in control_candidates if p in valid_str]
+        logger.info(
+            "valid_sids filter: cases %d → %d, controls %d → %d",
+            n_cases_before,
+            len(case_candidates),
+            n_controls_before,
+            len(control_candidates),
+        )
+
+    def _sample_with_preference(candidates: list, n: int, preferred: set[str]) -> list:
+        """Fill up to n slots from preferred first, then randomly from the rest."""
+        if not preferred:
+            return rng.choice(
+                candidates, size=min(n, len(candidates)), replace=False
+            ).tolist()
+        pref = [p for p in candidates if p in preferred]
+        others = [p for p in candidates if p not in preferred]
+        chosen = pref[:n]
+        still_needed = n - len(chosen)
+        if still_needed > 0 and others:
+            chosen += rng.choice(
+                others, size=min(still_needed, len(others)), replace=False
+            ).tolist()
+        return chosen
+
+    preferred_str = {str(s) for s in preferred_sids} if preferred_sids else set()
+    cases_sampled = _sample_with_preference(case_candidates, n_cases, preferred_str)
+    controls_sampled = _sample_with_preference(
+        control_candidates, n_controls, preferred_str
+    )
+
+    gold_set = set(cases_sampled) | set(controls_sampled)
+    unlabeled_pool = [p for p in df[patient_col].tolist() if p not in gold_set]
+
+    logger.info(
+        "MAP prefilter: %d case candidates (phenotype=1), "
+        "%d control candidates (ICD-only, MAP-rejected).  "
+        "Sampled %d cases + %d controls.  Unlabeled pool: %d patients.",
+        len(case_candidates),
+        len(control_candidates),
+        len(cases_sampled),
+        len(controls_sampled),
+        len(unlabeled_pool),
+    )
+    return {
+        "cases_pool": cases_sampled,
+        "controls_pool": controls_sampled,
+        "unlabeled_pool": unlabeled_pool,
+    }
+
+
 def silver_prefilter(
     obs_log: pd.DataFrame,
     config: DiseaseConfig,
@@ -336,6 +585,15 @@ def silver_prefilter(
 ) -> dict[str, pd.Series]:
     """
     Compute LATTE silver labels (Eq. 1) and sample case / control pools.
+
+    .. note::
+        **Prefer** ``map_prefilter`` when MAP has already been run.
+        ``silver_prefilter`` is designed for a *full mixed population* where
+        most patients have zero anchor-ICD events.  Applied to a
+        disease-specific sub-cohort (where everyone already has anchor codes),
+        the formula loses discriminative power and may return zero case
+        candidates.  Use ``silver_prefilter`` only when MAP results are not
+        yet available.
 
     Returns dict with keys:
         "silver_scores", "cases_pool", "controls_pool", "unlabeled_pool"
@@ -462,6 +720,44 @@ def build_result_record(
     }
 
 
+def build_result_record_recurring(
+    parsed: dict,
+    subject_id_fallback: str,
+) -> dict:
+    """
+    Convert a parsed recurring-event model JSON into a cache record.
+
+    Extracts event_visit_ids from the response and resolves their charttimes
+    from the timeline.  baseline_date / month_window are NOT applied here —
+    they are deferred to parse_gemini_recurring_results so the cache remains
+    timezone-agnostic and reusable with different study anchors.
+    """
+    sid = subject_id_fallback or str(parsed.get("subject_id", ""))
+    label = int(parsed.get("label", -1))
+    timeline = parsed.get("timeline", [])
+    event_vids = parsed.get("event_visit_ids") or []
+
+    vid_to_charttime: dict[int, str] = {}
+    for v in timeline:
+        vid = v.get("visit_id")
+        ct = v.get("charttime")
+        if vid is not None and ct:
+            vid_to_charttime[int(vid)] = str(ct)
+
+    event_charttimes = [
+        vid_to_charttime[int(vid)] for vid in event_vids if int(vid) in vid_to_charttime
+    ]
+
+    return {
+        "subject_id": sid,
+        "label": label,
+        "event_visit_ids": event_vids,
+        "event_charttimes": event_charttimes,
+        "timeline_json": json.dumps(timeline),
+        "parse_error": False,
+    }
+
+
 def error_record(subject_id: str = "") -> dict:
     return {
         "subject_id": subject_id,
@@ -529,6 +825,78 @@ def labels_to_latte(
                 return 1
             return int(row["T"] >= int(inc_T))
         return -1
+
+    all_visit_pairs["Y"] = all_visit_pairs.apply(_compute_Y, axis=1)
+    return (
+        all_visit_pairs[["subject_id", "T", "Y"]]
+        .sort_values(["subject_id", "T"])
+        .reset_index(drop=True)
+    )
+
+
+def recurring_labels_to_latte(
+    results_df: pd.DataFrame,
+    obs_log: pd.DataFrame,
+    baseline_date: str,
+    month_window: int = 3,
+    subject_col: str = "subject_id",
+) -> pd.DataFrame:
+    """
+    Convert recurring-event Gemini results to LATTE per-visit binary labels.
+
+    For each labeled patient, Y=1 at any visit window that contains a
+    qualifying event; Y=0 at all other windows.  Patients with label=0
+    (no events found) have Y=0 at every window.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        Output of parse_gemini_recurring_results().
+        Must have columns: subject_id, label, event_Ts (list[int]), parse_error.
+    obs_log : pd.DataFrame
+        Observation log; used to enumerate all (patient, T) pairs.
+    baseline_date : str
+        Study anchor date (YYYY-MM-DD); must match the value used in all scripts.
+    month_window : int
+        Size of each time window in months.
+
+    Returns
+    -------
+    pd.DataFrame with columns [subject_id, T, Y]
+    """
+    base_dt = pd.to_datetime(baseline_date)
+
+    obs = obs_log.copy()
+    obs["_dt"] = pd.to_datetime(obs["datetime"], errors="coerce")
+    obs["T"] = np.floor((obs["_dt"] - base_dt).dt.days / (30.44 * month_window)).astype(
+        "Int64"
+    )
+
+    valid = results_df[~results_df["parse_error"]]
+    labeled_sids = set(valid[subject_col].astype(str))
+    obs_labeled = obs[obs[subject_col].astype(str).isin(labeled_sids)]
+
+    all_visit_pairs = (
+        obs_labeled[[subject_col, "T"]]
+        .drop_duplicates()
+        .rename(columns={subject_col: "subject_id"})
+        .copy()
+    )
+    all_visit_pairs["subject_id"] = all_visit_pairs["subject_id"].astype(str)
+
+    # Build a map: subject_id → set of event T values
+    event_T_map: dict[str, set] = {}
+    for _, row in valid.iterrows():
+        sid = str(row[subject_col])
+        ts = row.get("event_Ts") or []
+        event_T_map[sid] = set(int(t) for t in ts if pd.notna(t))
+
+    def _compute_Y(row):
+        sid = row["subject_id"]
+        t = row["T"]
+        if pd.isna(t):
+            return -1
+        return int(int(t) in event_T_map.get(sid, set()))
 
     all_visit_pairs["Y"] = all_visit_pairs.apply(_compute_Y, axis=1)
     return (

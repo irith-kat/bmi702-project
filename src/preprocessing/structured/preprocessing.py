@@ -255,6 +255,51 @@ def notes_to_events(
     ].reset_index(drop=True)
 
 
+# lab_to_events
+# -------------
+# Convert lab events that already carry a LOINC code to observation log rows.
+# Rows where loinc_col is null are silently dropped (same behaviour as unmapped
+# ICD codes in icd_to_events).  The caller is responsible for joining the raw
+# lab table with a LOINC mapping file before calling this function — see
+# rollup_itemid_to_loinc() in rollup.py (mapping file: mapping_dicts/mimic_labitem_to_loinc.csv).
+#
+# Args:
+#   df           (pd.DataFrame) : Lab events table with LOINC codes already resolved.
+#                                 Must contain subject_col, loinc_col, date_col, value_col.
+#   loinc_col    (str)          : Column of LOINC code strings. Rows with NaN are dropped.
+#                                 Example: "loinc_code"
+#   date_col     (str)          : Column of measurement dates.
+#                                 Example: "charttime"
+#   value_col    (str)          : Column of numeric measurement values.
+#                                 Default: "valuenum"
+#   subject_col  (str)          : Patient ID column. Default: "subject_id"
+#
+# Returns:
+#   pd.DataFrame : Observation log rows with columns
+#                  [subject_col, "event_type", "event", "value", "datetime"].
+#                  event_type: "loinc"
+#                  event format: "LOINC:<code>"  e.g. "LOINC:33762-6"
+#                  value: numeric measurement (float)
+def lab_to_events(
+    df: pd.DataFrame,
+    loinc_col: str,
+    date_col: str,
+    value_col: str = "valuenum",
+    subject_col: str = "subject_id",
+) -> pd.DataFrame:
+    events = df.dropna(subset=[loinc_col]).copy()
+    events["event_type"] = "loinc"
+    events["event"] = "LOINC:" + events[loinc_col].astype(str)
+    events["value"] = (
+        events[value_col].astype(float) if value_col in events.columns else None
+    )
+    return (
+        events[[subject_col, "event_type", "event", "value", date_col]]
+        .rename(columns={date_col: "datetime"})
+        .reset_index(drop=True)
+    )
+
+
 # build_obs_log
 # -------------
 # Build a unified observation log from one or more EHR data modalities.
@@ -320,6 +365,8 @@ def notes_to_events(
 #                  - "value"      (float | None)  : numeric result; None for categorical
 #                                                  events; populated for future lab events
 #                  - "datetime"   (datetime)      : when the observation occurred
+
+
 def build_obs_log(
     icd_df: pd.DataFrame | None = None,
     icd_col: str | None = None,
@@ -335,6 +382,10 @@ def build_obs_log(
     notes_text_col: str | None = None,
     notes_date_col: str | None = None,
     target_cuis: list[dict] | None = None,
+    lab_df: pd.DataFrame | None = None,
+    lab_loinc_col: str | None = None,
+    lab_date_col: str | None = None,
+    lab_value_col: str = "valuenum",
     subject_col: str = "subject_id",
     icd_mapping_file: str = "Phecode_map_v1_2_icd9_icd10cm.csv",
     icd_has_dots: bool | None = None,
@@ -407,9 +458,24 @@ def build_obs_log(
             )
         )
 
+    if lab_df is not None:
+        if lab_loinc_col is None or lab_date_col is None:
+            raise ValueError(
+                "lab_loinc_col and lab_date_col are required when lab_df is provided."
+            )
+        parts.append(
+            lab_to_events(
+                lab_df,
+                lab_loinc_col,
+                lab_date_col,
+                value_col=lab_value_col,
+                subject_col=subject_col,
+            )
+        )
+
     if not parts:
         raise ValueError(
-            "At least one modality (icd_df, drug_df, cpt_df, or notes_df) must be provided."
+            "At least one modality (icd_df, drug_df, cpt_df, notes_df, or lab_df) must be provided."
         )
 
     return pd.concat(parts, ignore_index=True)
