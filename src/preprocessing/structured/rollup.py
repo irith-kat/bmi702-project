@@ -1,4 +1,5 @@
 import os
+import re
 
 import pandas as pd
 
@@ -7,6 +8,7 @@ def rollup_icd_to_phecode(
     df: pd.DataFrame,
     icd_column: str,
     mapping_file: str = "Phecode_map_v1_2_icd9_icd10cm.csv",
+    has_dots: bool | None = None,
 ) -> pd.DataFrame:
     """
     Map ICD-9/10 codes to PheCodes using the standard mapping file.
@@ -15,6 +17,10 @@ def rollup_icd_to_phecode(
         df (pd.DataFrame): Input DataFrame containing ICD codes.
         icd_column (str): Name of the column containing ICD codes.
         mapping_file (str): Path to the Phecode mapping CSV.
+        has_dots (bool | None): Whether ICD codes already contain a decimal dot.
+            None (default) → auto-detect from the first non-null value.
+            False → insert dot at position 3 (MIMIC-IV raw format).
+            True → codes already dotted; skip insertion.
 
     Returns:
         pd.DataFrame: DataFrame with added 'Phecode' and 'PhecodeString' columns.
@@ -22,9 +28,12 @@ def rollup_icd_to_phecode(
     if not os.path.exists(mapping_file):
         raise FileNotFoundError(f"Mapping file not found: {mapping_file}")
 
+    # Auto-detect: check first non-null code for presence of '.'
+    if has_dots is None:
+        sample = df[icd_column].dropna()
+        has_dots = ("." in str(sample.iloc[0])) if not sample.empty else True
+
     def _add_icd_dot(code: str) -> str:
-        """Insert a '.' at position 3 if the ICD code does not already contain one.
-        ICD codes in raw MIMIC-IV data are stored without the dot."""
         if pd.isna(code):
             return code
         code = str(code)
@@ -39,7 +48,8 @@ def rollup_icd_to_phecode(
     )
 
     df = df.copy()
-    df[icd_column] = df[icd_column].apply(_add_icd_dot)
+    if not has_dots:
+        df[icd_column] = df[icd_column].apply(_add_icd_dot)
 
     result_df = df.merge(map_df, left_on=icd_column, right_on="ICD", how="left")
 
@@ -84,6 +94,25 @@ def rollup_ndc_to_ingredient(
     if not os.path.exists(ndc_mapping_file):
         raise FileNotFoundError(f"NDC mapping file not found: {ndc_mapping_file}")
 
+    def _normalize_ndc(ndc: str) -> str:
+        """Normalize NDC to 11-digit format.
+        Strips non-digit characters (hyphens, spaces), then prepends '0' when
+        the result is 10 digits — the common case when a labeler code was stored
+        with 4 digits instead of 5 (4-4-2 → 5-4-2 canonical form).
+        Already-11-digit codes are returned unchanged.
+        For ambiguous 10-digit inputs from non-MIMIC sources, use ndclib in an
+        offline mapping-generation step (custom-vocab-mapping skill) to get the
+        correct segment-aware normalization before this runtime path is reached."""
+        if pd.isna(ndc):
+            return ndc
+        digits = re.sub(r"\D", "", str(ndc))
+        if len(digits) == 10:
+            return "0" + digits
+        return digits
+
+    result = df.copy()
+    result[ndc_column] = result[ndc_column].apply(_normalize_ndc)
+
     ndc_map = pd.read_csv(
         ndc_mapping_file,
         dtype={"ndc": str, "ingredient_id": str, "ingredient_name": str},
@@ -94,7 +123,6 @@ def rollup_ndc_to_ingredient(
         }
     )
 
-    result = df.copy()
     result = result.merge(ndc_map, left_on=ndc_column, right_on="ndc", how="left")
     # Drop the mapping's join key only if it differs from the input column name
     if ndc_column != "ndc":

@@ -131,6 +131,51 @@ def test_icd_missing_file_raises(tmp_path):
         rollup_icd_to_phecode(df, "icd_code", str(tmp_path / "missing.csv"))
 
 
+def test_icd_has_dots_true_skips_dot_insertion(tmp_path):
+    """has_dots=True: pre-dotted codes (e.g. TriNetX/OMOP) match without modification."""
+    p = _icd_mapping_file(tmp_path)
+    df = pd.DataFrame({"icd_code": ["714.0"]})
+    result = rollup_icd_to_phecode(df, "icd_code", str(p), has_dots=True)
+
+    assert result.loc[0, "Phecode"] == "714.1"
+
+
+def test_icd_has_dots_false_inserts_dot(tmp_path):
+    """has_dots=False: codes without dots (MIMIC-IV raw format) get dot inserted."""
+    p = _icd_mapping_file(tmp_path)
+    df = pd.DataFrame({"icd_code": ["7140"]})  # no dot, as stored in MIMIC-IV
+    result = rollup_icd_to_phecode(df, "icd_code", str(p), has_dots=False)
+
+    assert result.loc[0, "Phecode"] == "714.1"
+
+
+def test_icd_has_dots_none_autodetects_dotted(tmp_path):
+    """has_dots=None: auto-detects dots present, skips insertion."""
+    p = _icd_mapping_file(tmp_path)
+    df = pd.DataFrame({"icd_code": ["714.0"]})
+    result = rollup_icd_to_phecode(df, "icd_code", str(p), has_dots=None)
+
+    assert result.loc[0, "Phecode"] == "714.1"
+
+
+def test_icd_has_dots_none_autodetects_no_dot(tmp_path):
+    """has_dots=None: auto-detects no dot present, inserts dot before matching."""
+    p = _icd_mapping_file(tmp_path)
+    df = pd.DataFrame({"icd_code": ["7140"]})  # no dot
+    result = rollup_icd_to_phecode(df, "icd_code", str(p), has_dots=None)
+
+    assert result.loc[0, "Phecode"] == "714.1"
+
+
+def test_icd_has_dots_true_does_not_double_dot(tmp_path):
+    """has_dots=True should not insert a second dot if one is already present."""
+    p = _icd_mapping_file(tmp_path)
+    df = pd.DataFrame({"icd_code": ["714.0"]})
+    result = rollup_icd_to_phecode(df, "icd_code", str(p), has_dots=True)
+
+    assert result.loc[0, "icd_code"] == "714.0"
+
+
 # ---------------------------------------------------------------------------
 # rollup_ndc_to_ingredient
 # ---------------------------------------------------------------------------
@@ -177,6 +222,37 @@ def test_ndc_missing_file_raises(tmp_path):
         rollup_ndc_to_ingredient(
             df, "ndc", ndc_mapping_file=str(tmp_path / "missing.csv")
         )
+
+
+def test_ndc_10digit_normalised_to_11digit(tmp_path):
+    """10-digit NDC (missing leading zero) should be padded to 11 digits and match."""
+    ndc_file = _ndc_mapping_file(tmp_path)
+    df = pd.DataFrame(
+        {"ndc": ["0071015523"]}
+    )  # 10 digits; mapping key is "00071015523"
+    result = rollup_ndc_to_ingredient(df, "ndc", ndc_mapping_file=str(ndc_file))
+
+    assert result.loc[0, "rxnorm_ingredient_id"] == "321988"
+    assert result.loc[0, "rxnorm_ingredient_name"] == "lisinopril"
+
+
+def test_ndc_hyphenated_normalised(tmp_path):
+    """Hyphenated NDC should have hyphens stripped and match the 11-digit key."""
+    ndc_file = _ndc_mapping_file(tmp_path)
+    df = pd.DataFrame({"ndc": ["00071-0155-23"]})  # hyphens; maps to "00071015523"
+    result = rollup_ndc_to_ingredient(df, "ndc", ndc_mapping_file=str(ndc_file))
+
+    assert result.loc[0, "rxnorm_ingredient_name"] == "lisinopril"
+
+
+def test_ndc_normalisation_does_not_mutate_caller(tmp_path):
+    """The caller's DataFrame should not be modified by NDC normalisation."""
+    ndc_file = _ndc_mapping_file(tmp_path)
+    df = pd.DataFrame({"ndc": ["0071015523"]})
+    original_value = df.loc[0, "ndc"]
+    rollup_ndc_to_ingredient(df, "ndc", ndc_mapping_file=str(ndc_file))
+
+    assert df.loc[0, "ndc"] == original_value
 
 
 def test_ndc_preserves_original_columns(tmp_path):

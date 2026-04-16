@@ -53,6 +53,10 @@ from rollup import rollup_icd_to_phecode, rollup_cpt_to_ccs, rollup_ndc_to_ingre
 #   mapping_file (str)          : Path to the PheCode mapping CSV.
 #                                 Default: "Phecode_map_v1_2_icd9_icd10cm.csv"
 #                                 Pass an absolute path to avoid CWD dependency.
+#   has_dots    (bool | None)   : Whether ICD codes already contain a decimal dot.
+#                                 None (default) → auto-detect.
+#                                 False → insert dot (MIMIC-IV raw format).
+#                                 True → codes already dotted (TriNetX, OMOP, etc.).
 #
 # Returns:
 #   pd.DataFrame : Observation log rows with columns
@@ -66,8 +70,11 @@ def icd_to_events(
     date_col: str,
     subject_col: str = "subject_id",
     mapping_file: str = "Phecode_map_v1_2_icd9_icd10cm.csv",
+    has_dots: bool | None = None,
 ) -> pd.DataFrame:
-    rolled = rollup_icd_to_phecode(df, icd_col, mapping_file=mapping_file)
+    rolled = rollup_icd_to_phecode(
+        df, icd_col, mapping_file=mapping_file, has_dots=has_dots
+    )
     events = rolled.dropna(subset=["Phecode"]).copy()
     events["event_type"] = "phecode"
     events["event"] = "PheCode:" + events["Phecode"]
@@ -297,6 +304,9 @@ def notes_to_events(
 #                                           Default: "subject_id"
 #   icd_mapping_file (str)                : Path to PheCode mapping CSV for ICD rollup.
 #                                           Default: "Phecode_map_v1_2_icd9_icd10cm.csv"
+#   icd_has_dots     (bool | None)        : Whether ICD codes already contain a decimal dot.
+#                                           None (default) → auto-detect.
+#                                           False → insert dot (MIMIC-IV). True → skip.
 #   cpt_mapping_file (str)                : Path to AHRQ CCS mapping CSV for CPT rollup.
 #                                           Default: "CCS_Services_Procedures_v2025-1.csv"
 #
@@ -327,6 +337,7 @@ def build_obs_log(
     target_cuis: list[dict] | None = None,
     subject_col: str = "subject_id",
     icd_mapping_file: str = "Phecode_map_v1_2_icd9_icd10cm.csv",
+    icd_has_dots: bool | None = None,
     cpt_mapping_file: str = "CCS_Services_Procedures_v2025-1.csv",
     ndc_mapping_file: str = "mapping_dicts/ndc_to_rxnorm_ingredient.csv",
     drug_name_mapping_file: str = "mapping_dicts/drug_name_to_rxnorm_ingredient.csv",
@@ -342,7 +353,14 @@ def build_obs_log(
                 "icd_col and icd_date_col are required when icd_df is provided."
             )
         parts.append(
-            icd_to_events(icd_df, icd_col, icd_date_col, subject_col, icd_mapping_file)
+            icd_to_events(
+                icd_df,
+                icd_col,
+                icd_date_col,
+                subject_col,
+                icd_mapping_file,
+                has_dots=icd_has_dots,
+            )
         )
 
     if drug_df is not None:
