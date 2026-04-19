@@ -16,7 +16,7 @@ The preprocessing pipeline (`src/preprocessing/structured/`) is designed to work
 ```bash
 uv run pytest               # run the full suite
 uv run pytest tests/ -v     # verbose output
-uv run pytest tests/test_note_ner.py   # single module
+uv run pytest tests/unit/test_note_ner.py   # single module
 ```
 
 Tests live in `tests/` and cover `m4-pheno/note_ner.py` and `m4-pheno/once.py`. MedSpaCy is mocked so no model download is required.

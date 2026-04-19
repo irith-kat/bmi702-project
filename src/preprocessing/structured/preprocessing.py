@@ -261,7 +261,7 @@ def notes_to_events(
 # Rows where loinc_col is null are silently dropped (same behaviour as unmapped
 # ICD codes in icd_to_events).  The caller is responsible for joining the raw
 # lab table with a LOINC mapping file before calling this function — see
-# rollup_itemid_to_loinc() in rollup.py (mapping file: mapping_dicts/mimic_labitem_to_loinc.csv).
+# rollup_itemid_to_loinc() in rollup.py.
 #
 # Args:
 #   df           (pd.DataFrame) : Lab events table with LOINC codes already resolved.

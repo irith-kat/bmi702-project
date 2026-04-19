@@ -156,6 +156,65 @@ def rollup_ndc_to_ingredient(
     return result
 
 
+def rollup_itemid_to_loinc(
+    df: pd.DataFrame,
+    itemid_column: str,
+    mapping_file: str = "mapping_dicts/d_labitems_to_loinc.csv",
+) -> pd.DataFrame:
+    """
+    Map MIMIC-IV lab itemids to LOINC codes using the MIT-LCP OMOP mapping.
+
+    Source: github.com/MIT-LCP/mimic-code/tree/main/mimic-iv/mapping
+
+    Only rows where the OMOP vocabulary is 'LOINC' are kept in the mapping;
+    itemids that map to a non-LOINC concept (or have no mapping) get NaN in
+    the added columns — consistent with how other rollup functions handle misses.
+
+    Args:
+        df: Input DataFrame containing MIMIC-IV lab itemids.
+        itemid_column: Column name holding integer itemids.
+        mapping_file: Path to d_labitems_to_loinc.csv.
+
+    Returns:
+        DataFrame with 'loinc_code' and 'loinc_label' columns added.
+    """
+    if not os.path.exists(mapping_file):
+        raise FileNotFoundError(f"Mapping file not found: {mapping_file}")
+
+    map_df = pd.read_csv(
+        mapping_file,
+        usecols=[
+            "itemid (omop_source_code)",
+            "omop_concept_code",
+            "omop_concept_name",
+            "omop_vocabulary_id",
+        ],
+        dtype={"itemid (omop_source_code)": str, "omop_concept_code": str},
+    ).rename(
+        columns={
+            "itemid (omop_source_code)": "itemid",
+            "omop_concept_code": "loinc_code",
+            "omop_concept_name": "loinc_label",
+        }
+    )
+
+    # Keep only LOINC-vocabulary rows; non-LOINC concepts become misses
+    map_df = (
+        map_df[map_df["omop_vocabulary_id"] == "LOINC"]
+        .drop(columns=["omop_vocabulary_id"])
+        .rename(columns={"itemid": "_map_itemid"})
+    )
+
+    result = df.copy()
+    result["_itemid_str"] = result[itemid_column].astype(str)
+    result = result.merge(
+        map_df, left_on="_itemid_str", right_on="_map_itemid", how="left"
+    )
+    result.drop(columns=["_itemid_str", "_map_itemid"], inplace=True)
+
+    return result
+
+
 def rollup_cpt_to_ccs(
     df: pd.DataFrame,
     cpt_column: str,
