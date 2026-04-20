@@ -131,6 +131,9 @@ Review answers in the terminal. Key refinements to consider:
 | ≥1,000 candidates expected | MAP |
 | ICD specificity known to be low | MAP |
 | Need per-patient probability scores | MAP |
+| Need to know **when** disease first occurred? | MAP + LATTE |
+| Time-to-event / incidence analysis planned? | MAP + LATTE |
+| Can obtain ~30–200 Gemini gold labels? | MAP + LATTE |
 | No ONCE files / exploratory / pilot | Rule-based |
 | Small dataset (<200 candidates) | Rule-based |
 | Simple inclusion criteria only | Rule-based |
@@ -159,7 +162,7 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Exclusion:** [criteria with rationale]
 
 ### Cohort Definition Approach
-**Method:** [Rule-based ICD filter | MAP (Multimodal Automated Phenotyping)]
+**Method:** [Rule-based ICD filter | MAP (Multimodal Automated Phenotyping) | MAP + LATTE (incident timing)]
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
 **ONCE files:** [codified file name, narrative file name, or N/A]
@@ -247,6 +250,7 @@ Steps must run in order — each step depends on the output of the previous.
 | 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm, itemid→LOINC; assemble observation log | Raw EHR tables | `obs_log` |
 | 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes | `obs_log` + `event_type="cui"` rows |
 | 3 | `map-phenotyping` | Fit Poisson mixture model over ONCE co-features; assign posterior probabilities and binary labels | `obs_log` + ONCE files | `map_results` with `phenotype` column |
+| 4 | `latte-phenotyping` | Semi-supervised GRU; Gemini-labels ~100–200 patients, learns incident timing from visit sequences | `map_results` + discharge notes | per-patient, per-visit incident probability |
 
 **ONCE files:** Required for MAP. Place codified and narrative feature files in `input/`. Generate at https://shiny.parse-health.org/ONCE/ if not present. Enable `phenotyping_features = True` to reduce noise.
 
@@ -255,7 +259,8 @@ Steps must run in order — each step depends on the output of the previous.
 |-------|-------------|
 | `m4-api` | Writing SQL queries, multi-step data access |
 | `mimic-table-relationships` | Understanding joins, avoiding duplicates |
-| `phenotyping-strategy` | Deciding MAP vs rule-based at study start |
+| `phenotyping-strategy` | Deciding MAP vs rule-based vs MAP+LATTE at study start |
+| `latte-phenotyping` | Incident timing after MAP identifies the cohort |
 
 ---
 
