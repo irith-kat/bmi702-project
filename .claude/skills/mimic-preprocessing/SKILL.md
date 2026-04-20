@@ -1,6 +1,6 @@
 ---
 name: mimic-preprocessing
-description: Preprocess structured MIMIC-IV data (diagnoses, prescriptions, procedures) into a standardized observation log using icd_to_events, drug_to_events, cpt_to_events, and build_obs_log. Use at the start of any phenotyping workflow before running MAP.
+description: Preprocess structured MIMIC-IV data (diagnoses, prescriptions, procedures, lab events) into a standardized observation log using icd_to_events, drug_to_events, cpt_to_events, lab_to_events, and build_obs_log. Use at the start of any phenotyping workflow before running MAP.
 ---
 
 # MIMIC Structured Data Preprocessing
@@ -10,8 +10,8 @@ All functions in `src/preprocessing/structured/preprocessing.py` produce a stand
 | Column | Type | Description |
 |---|---|---|
 | `subject_id` | int | Patient identifier |
-| `event_type` | str | Modality: `"phecode"`, `"rxnorm"`, `"ccs"`, `"cui"` |
-| `event` | str | Prefixed code: `"PheCode:714.1"`, `"RXNORM:956874"`, `"CCS:3"` |
+| `event_type` | str | Modality: `"phecode"`, `"rxnorm"`, `"ccs"`, `"loinc"`, `"cui"` |
+| `event` | str | Prefixed code: `"PheCode:714.1"`, `"RXNORM:956874"`, `"CCS:3"`, `"LOINC:11555-0"` |
 | `value` | float\|None | Numeric result (labs); None for categorical events |
 | `datetime` | datetime | When the observation occurred |
 
@@ -19,7 +19,8 @@ All functions in `src/preprocessing/structured/preprocessing.py` produce a stand
 
 ```python
 import sys
-from src.preprocessing.structured.preprocessing import icd_to_events, drug_to_events, cpt_to_events, build_obs_log
+from src.preprocessing.structured.preprocessing import icd_to_events, drug_to_events, cpt_to_events, lab_to_events, build_obs_log
+from src.preprocessing.structured.rollup import rollup_itemid_to_loinc
 ```
 
 ## ICD Diagnoses → PheCodes
@@ -80,6 +81,33 @@ cpt_obs = cpt_to_events(
 # event format: "CCS:3"
 ```
 
+## Lab Events → LOINC
+
+Rolls up MIMIC-IV `labevents` itemids to LOINC codes using the MIT-LCP OMOP mapping
+(`mapping_dicts/d_labitems_to_loinc.csv`). Call `rollup_itemid_to_loinc()` first to
+join LOINC codes, then pass the result to `lab_to_events()`. Rows with no LOINC mapping
+are silently dropped.
+
+```python
+from rollup import rollup_itemid_to_loinc
+
+labevents_with_loinc = rollup_itemid_to_loinc(
+    df             = labevents_df,
+    itemid_column  = "itemid",
+    mapping_file   = "mapping_dicts/d_labitems_to_loinc.csv",
+)
+
+lab_obs = lab_to_events(
+    df          = labevents_with_loinc,
+    loinc_col   = "loinc_code",
+    date_col    = "charttime",
+    value_col   = "valuenum",     # default
+    subject_col = "subject_id",   # default
+)
+# event format: "LOINC:11555-0"
+# value: numeric measurement (float); rows with no LOINC match are dropped
+```
+
 ## Combined: build_obs_log
 
 Builds the full observation log from any subset of modalities in one call.
@@ -131,3 +159,4 @@ All mapping files live in `mapping_dicts/`. Pass absolute paths to avoid CWD dep
 | `mapping_dicts/CCS_Services_Procedures_v2025-1_052425.csv` | `cpt_to_events` | AHRQ CCS alphanumeric range matching |
 | `mapping_dicts/ndc_to_rxnorm_ingredient.csv` | `drug_to_events` | 11-digit NDC → RxNorm ingredient (~97.7% MIMIC coverage) |
 | `mapping_dicts/drug_name_to_rxnorm_ingredient.csv` | `drug_to_events` | Drug name fallback via gcpt_drug_ndc (case-insensitive) |
+| `mapping_dicts/d_labitems_to_loinc.csv` | `rollup_itemid_to_loinc` → `lab_to_events` | MIMIC-IV itemid → LOINC (MIT-LCP OMOP mapping; 1400/1630 itemids covered) |

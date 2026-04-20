@@ -244,7 +244,7 @@ Steps must run in order — each step depends on the output of the previous.
 
 | Step | Skill | What it does | Input | Output |
 |------|-------|-------------|-------|--------|
-| 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm; assemble observation log | Raw EHR tables | `obs_log` |
+| 1 | `mimic-preprocessing` | Roll up ICD→PheCode, CPT→CCS, NDC→RxNorm, itemid→LOINC; assemble observation log | Raw EHR tables | `obs_log` |
 | 2 | `mimic-note-preprocessing` | Extract CUI mentions from discharge notes via MedSpaCy; append to obs_log | `obs_log` + ONCE narrative CUIs + notes | `obs_log` + `event_type="cui"` rows |
 | 3 | `map-phenotyping` | Fit Poisson mixture model over ONCE co-features; assign posterior probabilities and binary labels | `obs_log` + ONCE files | `map_results` with `phenotype` column |
 
