@@ -6,6 +6,7 @@ import pytest
 from rollup import (
     rollup_cpt_to_ccs,
     rollup_icd_to_phecode,
+    rollup_itemid_to_loinc,
     rollup_ndc_to_ingredient,
 )
 
@@ -338,3 +339,130 @@ def test_cpt_multiple_codes_mixed_matches(tmp_path):
     assert result.loc[1, "ccs_category"] == 2  # Biopsy range
     assert pd.isna(result.loc[2, "ccs_category"])  # no match
     assert result.loc[3, "ccs_category"] == 3  # E&M range
+
+
+# ---------------------------------------------------------------------------
+# rollup_itemid_to_loinc
+# ---------------------------------------------------------------------------
+
+
+def _loinc_mapping_file(tmp_path: Path) -> Path:
+    """Minimal d_labitems_to_loinc-style CSV with only the columns the function reads."""
+    df = pd.DataFrame(
+        {
+            "itemid (omop_source_code)": ["50802", "50861", "50971"],
+            "label": ["Base Excess", "Alanine Aminotransferase (ALT)", "Potassium"],
+            "fluid": ["Blood", "Blood", "Blood"],
+            "category": ["Blood Gas", "Chemistry", "Chemistry"],
+            "valueuom": ["mEq/L", "IU/L", "mEq/L"],
+            "omop_concept_id": ["3012501", "3006923", "3023103"],
+            "omop_concept_code": ["11555-0", "1742-6", "2823-3"],
+            "omop_concept_name": [
+                "Base excess in Blood by calculation",
+                "Alanine aminotransferase [Enzymatic activity/volume] in Serum or Plasma",
+                "Potassium [Moles/volume] in Serum or Plasma",
+            ],
+            "omop_vocabulary_id": ["LOINC", "LOINC", "LOINC"],
+        }
+    )
+    p = tmp_path / "d_labitems_to_loinc.csv"
+    df.to_csv(p, index=False)
+    return p
+
+
+def _loinc_mapping_file_with_non_loinc(tmp_path: Path) -> Path:
+    """Mapping file where one row has a non-LOINC vocabulary (should be treated as a miss)."""
+    df = pd.DataFrame(
+        {
+            "itemid (omop_source_code)": ["50802", "50999"],
+            "label": ["Base Excess", "Some Other Item"],
+            "fluid": ["Blood", "Blood"],
+            "category": ["Blood Gas", "Other"],
+            "valueuom": ["mEq/L", ""],
+            "omop_concept_id": ["3012501", "9999999"],
+            "omop_concept_code": ["11555-0", "SNOMED:123"],
+            "omop_concept_name": ["Base excess in Blood", "Some SNOMED concept"],
+            "omop_vocabulary_id": ["LOINC", "SNOMED"],
+        }
+    )
+    p = tmp_path / "d_labitems_to_loinc.csv"
+    df.to_csv(p, index=False)
+    return p
+
+
+def test_loinc_maps_known_itemid(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"itemid": [50802, 50861]})
+    result = rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert result.loc[0, "loinc_code"] == "11555-0"
+    assert result.loc[1, "loinc_code"] == "1742-6"
+
+
+def test_loinc_adds_label_column(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"itemid": [50971]})
+    result = rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert result.loc[0, "loinc_label"] == (
+        "Potassium [Moles/volume] in Serum or Plasma"
+    )
+
+
+def test_loinc_unmatched_itemid_returns_nan(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"itemid": [99999]})
+    result = rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert pd.isna(result.loc[0, "loinc_code"])
+    assert pd.isna(result.loc[0, "loinc_label"])
+
+
+def test_loinc_non_loinc_vocabulary_treated_as_miss(tmp_path):
+    p = _loinc_mapping_file_with_non_loinc(tmp_path)
+    df = pd.DataFrame({"itemid": [50802, 50999]})
+    result = rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert result.loc[0, "loinc_code"] == "11555-0"
+    assert pd.isna(result.loc[1, "loinc_code"])
+
+
+def test_loinc_preserves_original_row_count(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"itemid": [50802, 50861, 50971, 99999]})
+    result = rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert len(result) == len(df)
+
+
+def test_loinc_preserves_original_columns(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"itemid": [50802], "subject_id": [123]})
+    result = rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert "subject_id" in result.columns
+    assert result.loc[0, "subject_id"] == 123
+
+
+def test_loinc_custom_itemid_column_name(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"lab_item": [50802]})
+    result = rollup_itemid_to_loinc(df, "lab_item", str(p))
+
+    assert result.loc[0, "loinc_code"] == "11555-0"
+    assert "lab_item" in result.columns
+
+
+def test_loinc_does_not_mutate_caller(tmp_path):
+    p = _loinc_mapping_file(tmp_path)
+    df = pd.DataFrame({"itemid": [50802]})
+    original_columns = list(df.columns)
+    rollup_itemid_to_loinc(df, "itemid", str(p))
+
+    assert list(df.columns) == original_columns
+
+
+def test_loinc_missing_file_raises(tmp_path):
+    df = pd.DataFrame({"itemid": [50802]})
+    with pytest.raises(FileNotFoundError):
+        rollup_itemid_to_loinc(df, "itemid", str(tmp_path / "missing.csv"))
