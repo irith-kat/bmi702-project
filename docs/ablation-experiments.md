@@ -9,7 +9,7 @@ Four configurations testing Claude Code cohort-building performance with progres
 | A1-base | `clinical-research-session`, `m4-api`, `mimic-table-relationships` |   | `mimiciv/` |
 | A2-structured | + `mimic-preprocessing` | `src/preprocessing/structured/` | + `mapping_dicts/` |
 | A3-nlp | + `mimic-note-preprocessing` | + `src/preprocessing/nlp/` | + `input/` (ONCE files) |
-| A4-full | + `phenotyping-strategy`, `map-phenotyping` | + `src/map/` |  |
+| A4-full | + `phenotyping-strategy`, `map-phenotyping`, `latte-phenotyping` | + `src/map/` + `src/latte/` |  |
 
 ## Setup
 
@@ -52,7 +52,8 @@ claude --dangerously-skip-permissions \
   --add-dir ../../bmi702-project/input \
   --add-dir ../../bmi702-project/src/preprocessing/structured \
   --add-dir ../../bmi702-project/src/preprocessing/nlp \
-  --add-dir ../../bmi702-project/src/map
+  --add-dir ../../bmi702-project/src/map \
+  --add-dir ../../bmi702-project/src/latte
 ```
 
 ## Prompt
@@ -60,10 +61,8 @@ claude --dangerously-skip-permissions \
 Use the same prompt for all four configs:
 
 ```
-/clinical-research-session I want to identify and characterize a rheumatoid arthritis patient cohort from MIMIC-IV.
+/clinical-research-session Build a cohort of patients with heart failure from MIMIC-IV.
 ```
-
-During the interview, make sure to use the full MIMIC-IV dataset (not the demo set), select no exclusion criteria, select to use NLP CUI features (for ablation configs with NLP), and characterize with demographics and comorbidities. When asked for your protocol approval, respond affirmatively.
 
 ## Notes
 
