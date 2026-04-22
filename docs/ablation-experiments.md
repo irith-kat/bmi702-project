@@ -96,6 +96,8 @@ When finished, save the following to a file called OUTPUT_COHORT.json in the cur
 }
 ```
 
+After running each ablation, save the Claude Code transcript using the slash command `\export`!
+
 ## Notes
 
-- `docs/`, `notebooks/`, and `figures/` are excluded via `.claudeignore` in each ablation config
+- The `docs`, `notebooks`, `tests`, and `figures` directories are excluded via `.claudeignore` in each ablation config
