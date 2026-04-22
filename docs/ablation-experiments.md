@@ -66,7 +66,7 @@ Use the same prompt for all four configs:
 ```
 /clinical-research-session Build a cohort of patients with heart failure from MIMIC-IV.
 
-When finished, save the following to a file called cohort_output.json in the current directory:
+When finished, save the following to a file called OUTPUT_COHORT.json in the current directory:
 {
   "n_cases": <int>,
   "n_controls": <int>,
