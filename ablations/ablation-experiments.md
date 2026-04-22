@@ -96,7 +96,7 @@ When finished, save the following to a file called OUTPUT_COHORT.json in the cur
 }
 ```
 
-After running each ablation, save the Claude Code transcript using the slash command `\export`!
+After running each ablation, save the Claude Code transcript using the slash command `\export` and then selecting save to file!
 
 ## Notes
 
