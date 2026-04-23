@@ -247,6 +247,8 @@ def run_latte(
     weight_unlabel: float = 0.2,
     weight_contrastive: float = 0.1,
     weight_smooth: float = 0.1,
+    weight_additional: float = 0.1,
+    flag_train_augment: int = 1,
     month_window: int = 3,
     max_visits: int = 115,
     python_executable: str | None = None,
@@ -401,6 +403,10 @@ def run_latte(
         str(weight_contrastive),
         "--weight_smooth",
         str(weight_smooth),
+        "--weight_additional",
+        str(weight_additional),
+        "--flag_train_augment",
+        str(flag_train_augment),
         "--month_window",
         str(month_window),
         "--max_visits",
@@ -412,7 +418,8 @@ def run_latte(
 
     # ------------------------------------------------------------------
     # Parse output: LATTE saves "Incident_epoch{N}_1__results_latte.csv"
-    # at the final epoch (epoch_num = epochs - 1).
+    # for every epoch. Select the checkpoint with the best AUC on labeled
+    # patients rather than always taking the last epoch.
     # ------------------------------------------------------------------
     pattern = os.path.join(save_dir, "Incident_epoch*.csv")
     candidates = glob.glob(pattern)
@@ -422,7 +429,6 @@ def run_latte(
             "Check save_dir and results_filename."
         )
 
-    # Sort by epoch number embedded in the filename
     def _epoch_num(path: str) -> int:
         basename = os.path.basename(path)
         try:
@@ -430,23 +436,58 @@ def run_latte(
         except (IndexError, ValueError):
             return -1
 
-    output_path = max(candidates, key=_epoch_num)
-    logger.info("Reading LATTE predictions from %s", output_path)
+    def _parse(path: str) -> pd.DataFrame:
+        df = pd.read_csv(path, index_col=0)
+        df = df.rename(
+            columns={
+                "Patient_num": "subject_id",
+                "Date": "visit_T",
+                "Y_pred": "incident_probability",
+                "Y_label:": "Y_true",
+            }
+        )
+        df["subject_id"] = df["subject_id"].astype(str)
+        return df[
+            ["subject_id", "visit_T", "incident_probability", "Y_true"]
+        ].reset_index(drop=True)
 
-    pred_df = pd.read_csv(output_path, index_col=0)
-    pred_df = pred_df.rename(
-        columns={
-            "Patient_num": "subject_id",
-            "Date": "visit_T",
-            "Y_pred": "incident_probability",
-            "Y_label:": "Y_true",
-        }
-    )
-    pred_df["subject_id"] = pred_df["subject_id"].astype(str)
+    def _auc(df: pd.DataFrame) -> float:
+        from sklearn.metrics import roc_auc_score
 
-    return pred_df[
-        ["subject_id", "visit_T", "incident_probability", "Y_true"]
-    ].reset_index(drop=True)
+        labeled = df[df["Y_true"] != -1]
+        if labeled["Y_true"].nunique() < 2:
+            return 0.0
+        try:
+            return roc_auc_score(labeled["Y_true"], labeled["incident_probability"])
+        except Exception:
+            return 0.0
+
+    # Evaluate all checkpoints; fall back to last epoch if no labeled rows
+    best_path, best_auc = None, -1.0
+    for path in sorted(candidates, key=_epoch_num):
+        auc = _auc(_parse(path))
+        if auc > best_auc:
+            best_auc, best_path = auc, path
+
+    if best_path is None:
+        best_path = max(candidates, key=_epoch_num)
+
+    last_path = max(candidates, key=_epoch_num)
+    last_epoch = _epoch_num(last_path)
+    best_epoch = _epoch_num(best_path)
+
+    if best_epoch != last_epoch:
+        logger.info(
+            "Best checkpoint: epoch %d (AUC=%.4f) — last epoch was %d. "
+            "Using best epoch.",
+            best_epoch,
+            best_auc,
+            last_epoch,
+        )
+    else:
+        logger.info("Best checkpoint: epoch %d (AUC=%.4f).", best_epoch, best_auc)
+
+    return _parse(best_path)
 
 
 # ---------------------------------------------------------------------------
