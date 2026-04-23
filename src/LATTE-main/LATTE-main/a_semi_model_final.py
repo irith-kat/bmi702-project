@@ -1620,7 +1620,7 @@ def Attention_train(
                 score_get_test = np.squeeze(score_get_test)
                 y_true_get_test = np.squeeze(y_true_get_test)
 
-                if epoch_num > epochs - 2:
+                if epoch_num >= epoch_silver:
                     if True:
                         print("---------saving--- ", dirr_save, ": ", filename_save)
                         (
