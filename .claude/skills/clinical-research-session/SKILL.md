@@ -38,7 +38,7 @@ Scripts ARE the science. Create this folder structure at study start:
 ```
 output/{study}/
 ├── PROTOCOL.md
-├── scripts/
+├── scripts/ # those are examples — name them by step and keep them self-contained
 │   ├── cohort_definition.py
 │   ├── nlp_features.py
 │   ├── map_phenotyping.py
@@ -120,7 +120,6 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 
 Review answers in the terminal. Key refinements to consider:
 - **Anchor ICD/PheCode** — Confirm it exists before proceeding
-- **Dataset** — Recommend demo for first runs; switch to full MIMIC-IV once the pipeline validates
 - **NLP decision** — Confirm whether notes will be used before writing feature-matrix code
 
 **Decide phenotyping approach** using the `phenotyping-strategy` skill criteria:
@@ -161,7 +160,7 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Inclusion:** [criteria]
 **Exclusion:** [criteria with rationale]
 
-### Cohort Definition Approach
+### Cohort Definition Approach (adapt the template below based on the phenotyping strategy decision)
 **Method:** [Rule-based ICD filter | MAP (Multimodal Automated Phenotyping) | MAP + LATTE (incident timing)]
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
@@ -321,7 +320,7 @@ Stop and reconsider if you see:
 
 ## After Completion
 
-1. Save a brief `RESULTS.md` to `output_dir` with: cohort size, key characterization findings
+1. Save a brief `RESULTS.md` to `output` with: cohort size, key characterization findings
 2. Summarize key findings in the terminal
 3. Acknowledge limitations — especially ICD coverage gaps and NLP sensitivity/specificity tradeoffs
 4. If downstream analysis is planned, suggest it as a new study version (`v2`) or a separate session

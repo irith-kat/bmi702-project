@@ -76,17 +76,6 @@ Without NLP, expect `map_only ≈ 0` (MAP finds almost no cases ICD missed). Wit
 
 Use when the research question is **longitudinal**: not just who has the disease, but when they first developed it, some disease specific event... LATTE is a semi-supervised GRU that learns from ~100–200 gold-labeled patients (cases + controls) and a larger silver-label pool.
 
-```
-MAP cohort → map_prefilter()  → gold label candidates (cases + optional controls)
-                    ↓
-          run_gemini_labeling()   ← Gemini LLM reviews discharge notes
-          labels_to_latte()       ← per-visit (subject_id, T, Y) labels
-                    ↓
-          format_latte_input()    ← train/test/unlabeled CSVs
-          build_cooccurrence_embeddings()
-          run_latte()             ← per-patient, per-visit incident probability
-```
-
 **When it adds value:**
 - Time-to-event outcomes or survival analysis
 - Drug safety studies requiring a pre-disease baseline window
@@ -94,9 +83,7 @@ MAP cohort → map_prefilter()  → gold label candidates (cases + optional cont
 
 **Key parameters:**
 - `baseline_date`: fixed study anchor (e.g. `"2100-01-01"` for MIMIC-IV)
-- `month_window=3`: 3-month bins (LATTE paper default)
 - `key_codes`: PheCode anchor(s) — must be in ONCE feature list
-- Gold labels: ~30–150 cases; controls (MAP-rejected ICD patients) strengthen supervised loss but can be 0 if cohort is disease-specific
 
 **See:** `latte-phenotyping` skill for full implementation details.
 
