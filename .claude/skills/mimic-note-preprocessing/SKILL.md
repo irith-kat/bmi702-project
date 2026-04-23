@@ -5,99 +5,120 @@ description: Extract CUI mentions from MIMIC-IV discharge notes using MedSpaCy a
 
 # MIMIC Notes Preprocessing
 
-Extracts NLP CUI mentions from clinical notes using MedSpaCy and returns them in the standard observation log format (`event_type="cui"`, `event="CUI:C0003873"`). Requires user-provided ONCE files to specify target CUIs.
+Extracts NLP CUI mentions from clinical notes using MedSpaCy. Output rows use `event_type="cui"`, `event="CUI:C0003873"` and are concatenated into the observation log alongside structured events.
 
 Negated and family-history mentions are excluded automatically by MedSpaCy's context module.
 
-## Setup
+## Imports
 
 ```python
-from src.preprocessing.structured.preprocessing import notes_to_events
-from src.preprocessing.nlp.once import get_once_features
-from m4 import set_dataset, execute_query
-from m4.config import set_active_backend
+from preprocessing.nlp import get_once_features
+from preprocessing.structured import notes_to_events
 ```
+
+---
+
+## Two-Step Approach
+
+Notes preprocessing is split across two scripts:
+
+1. **Cohort script** (`01_cohort_definition.py`) — fetch and cache `notes_raw.parquet` for rellevant cohort patients. See the `mimic-preprocessing` skill for the batched fetch pattern. This fetching can be placed in 01 or later in the pipeline, decide at your discretion based on which list of patients you want to fetch notes for (all cohort, ONCE candidates, MAP gold...). More info below.
+
+2. **NLP script** (`02_notes_nlp.py`) — read from cache, run MedSpaCy, save `cui_obs.parquet`. The feature matrix script then concatenates this into the observation log.
+
+This split means the expensive BigQuery fetch is cached independently of the NLP run.
+
+---
 
 ## Step 1 — Get Target CUIs from ONCE
 
-ONCE files are **user-provided** and should be placed in `input/`.
+ONCE files are **user-provided** in `input/`. Use glob to find them.
 
 ```python
-once_features = get_once_features(
-    codified_file  = "input/ONCE_codified.csv", # Exact name can vary
-    narrative_file = "input/ONCE_narrative.csv", # Exact name can vary
-)
+import glob
+from preprocessing.nlp import get_once_features
+
+codified_files = sorted(glob.glob("input/ONCE_*PheCode*.csv"))
+narrative_files = sorted(glob.glob("input/ONCE_*_C[0-9]*.csv"))
+
+once_features = get_once_features(codified_files[0], narrative_files[0])
 target_cuis = once_features["nlp_target_cuis"]
-# List of {"term": "rheumatoid arthritis", "cui": "C0003873"} dicts
+# List of {"term": "...", "cui": "C0003873"} dicts
 ```
 
-## Step 2 — Identify Candidates from obs_log
+---
 
-Before loading notes, filter the observation log (built in the mimic-preprocessing step) to patients who have at least one ONCE codified event. This is the candidate set — patients plausibly related to the phenotype of interest. Running NLP on the full cohort is expensive and unnecessary.
+## Step 2 — NLP Script (reads from cache)
+
+The NLP script should exit early if `cui_obs.parquet` already exists.
+
+```python
+import os
+import time
+from pathlib import Path
+import pandas as pd
+from preprocessing.nlp import get_once_features
+from preprocessing.structured import notes_to_events
+
+out = Path(__file__).resolve().parent.parent
+
+# Cache check — delete cui_obs.parquet to force a re-run
+_out_path = out / "data" / "cui_obs.parquet"
+if _out_path.exists():
+    print("cui_obs.parquet already exists — skipping NLP extraction.")
+    raise SystemExit(0)
+
+# Load ONCE features
+once_features = get_once_features(codified_file, narrative_file)
+target_cuis = once_features["nlp_target_cuis"]
+
+# Load cached notes
+notes_raw = pd.read_parquet(out / "data" / "notes_raw.parquet")
+
+# Run MedSpaCy NER
+NOTES_PER_PATIENT = 3        # most recent N discharge notes per patient
+MAX_NOTE_CHARS    = 10_000   # truncate per note; good speed/recall tradeoff
+N_PROCESS         = os.cpu_count()  # use 1 in Jupyter (fork deadlock risk)
+
+t0 = time.time()
+cui_obs = notes_to_events(
+    notes_df          = notes_raw,
+    text_col          = "text",
+    date_col          = "charttime",
+    target_cuis       = target_cuis,
+    notes_per_patient = NOTES_PER_PATIENT,
+    max_note_chars    = MAX_NOTE_CHARS,
+    n_process         = N_PROCESS,
+    batch_size        = 256,
+)
+print(f"Done in {(time.time()-t0)/60:.1f} min — {len(cui_obs):,} CUI events, "
+      f"{cui_obs['subject_id'].nunique():,} patients")
+
+cui_obs.to_parquet(_out_path, index=False)
+```
+
+---
+
+## Key Parameters
+
+| Parameter | Value | Notes |
+|---|---|---|
+| `notes_per_patient` | 3 | N most recent notes per patient. Ensures all patients get coverage. |
+| `max_note_chars` | 10_000 | Truncate each note before NLP. Covers PMH + meds (~86% of avg MIMIC note). Speeds MedSpaCy ~4–6×. |
+| `n_process` | `os.cpu_count()` | Workers for `nlp.pipe()`. Use `1` in Jupyter notebooks only. |
+| `batch_size` | 256 | Texts buffered per spaCy batch. No recall impact. |
+
+---
+
+## When to Fetch All Cohort Notes vs. Candidates Only
+
+Fetch notes for **all cohort patients** when LATTE gold labeling will be needed downstream — Gemini reviews discharge notes for MAP cases and needs the full set available.
+
+Fetch notes for **candidates only** (patients with ≥1 ONCE codified event) when the study is MAP-only and notes are purely for adding NLP sensitivity. The candidate filter reduces the note volume significantly:
 
 ```python
 once_events   = set(once_features["codified_list"])
 candidate_ids = set(obs_log[obs_log["event"].isin(once_events)]["subject_id"])
-print(f"Candidates: {len(candidate_ids)}")
 ```
 
-## Step 3 — Load Notes (Candidates Only)
-
-Always filter to candidate patients in the SQL query — the full notes table is too large to pull wholesale.
-
-**M4 token limit:** M4 enforces a 10k-token query limit. A plain `IN (...)` with
-7-digit subject IDs hits this limit at ~3,500 IDs. Always use batched queries:
-
-```python
-import pandas as pd
-
-set_dataset("mimic-iv-note")
-
-candidate_ids = sorted(candidate_ids)
-BATCH_SIZE = 400   # safe margin under the 10k token limit
-batches = [candidate_ids[i:i+BATCH_SIZE] for i in range(0, len(candidate_ids), BATCH_SIZE)]
-
-chunks = []
-for batch in batches:
-    id_list = ", ".join(str(sid) for sid in batch)
-    chunk = execute_query(f"""
-        SELECT subject_id, text, charttime
-        FROM mimiciv_note.discharge
-        WHERE subject_id IN ({id_list})
-    """)
-    chunks.append(chunk)
-
-notes_df = pd.concat(chunks, ignore_index=True).dropna(subset=["text"])
-print(f"Notes fetched: {len(notes_df)} ({notes_df['subject_id'].nunique()} patients)")
-```
-
-## Step 4 — notes_to_events
-
-```python
-import os
-
-nlp_obs = notes_to_events(
-    notes_df          = notes_df,
-    text_col          = "text",
-    date_col          = "charttime",
-    target_cuis       = target_cuis,
-    subject_col       = "subject_id",    # default
-    max_note_chars    = 10_000,          # truncate per note for speed (None = no truncation)
-    notes_per_patient = 3,               # N most recent notes per patient (None = all)
-    n_process         = os.cpu_count()-1,  # multiprocessing
-)
-# Returns obs_log rows: subject_id, event_type="cui", event="CUI:C0003873", value=None, datetime
-```
-
-## Key Parameters
-
-| Parameter | Default | Notes |
-|---|---|---|
-| `max_note_chars` | None | Truncate each note before NLP. `10_000` covers PMH + meds (~86% of avg MIMIC note). Speeds up MedSpaCy ~4–6×. |
-| `notes_per_patient` | None | Keep N most recent notes per patient. Use to ensure all candidates get coverage instead of a flat total cap. `3` is a good starting point. |
-| `n_process` | 1 | Workers for `nlp.pipe()`. Always set to `os.cpu_count()-1` in scripts. (Keep at `1` only in Jupyter notebooks where fork-based multiprocessing can deadlock.) |
-| `batch_size` | 256 | Texts buffered per spaCy batch. 256 is a good default; no recall impact. |
-
-## Effect on Cohort Identification
-
-Without NLP, cohort identification relies solely on structured EHR codes (ICD, CPT, NDC), which may miss patients who are under-coded. Adding NLP CUI features improves **sensitivity** by surfacing patients mentioned in notes but lacking a formal diagnosis code.
+When in doubt, use your criteria to determine which patients in the cohort are likely to need notes-based features (ONCE codified, all, MAP gold...). You have discretion to flip the order of steps to fetch notes for whatever cohort you deem fit.
