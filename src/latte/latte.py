@@ -39,6 +39,8 @@ def format_latte_input(
     unlabeled_ids: list[str] | None = None,
     train_frac: float = 0.8,
     seed: int = 42,
+    train_patients: list[str] | None = None,
+    test_patients: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Convert a long-format observation log and gold labels into the three CSV
@@ -73,8 +75,17 @@ def format_latte_input(
         Fraction of gold-labeled patients to use for training (default 0.8).
         The complement goes to the test set.
         Stratified by Y label to preserve case/control balance.
+        Ignored when ``train_patients`` / ``test_patients`` are provided.
     seed : int
         Random seed for the stratified train/test split.
+        Ignored when ``train_patients`` / ``test_patients`` are provided.
+    train_patients : list[str] | None
+        Explicit list of patient IDs for the training set.  When provided
+        together with ``test_patients``, the internal ``train_test_split``
+        is skipped entirely.  Used for k-fold cross-validation.
+    test_patients : list[str] | None
+        Explicit list of patient IDs for the test set.  Must be provided
+        together with ``train_patients``.
 
     Returns
     -------
@@ -150,18 +161,25 @@ def format_latte_input(
         )
 
     # Stratified train/test split on unique labeled patients
+    # (skipped when explicit fold splits are provided for CV)
     labeled_patients = np.array(gold["subject_id"].unique().tolist())
-    patient_labels = gold.groupby("subject_id")["Y"].max().reindex(labeled_patients)
 
-    train_patients, test_patients = train_test_split(
-        labeled_patients,
-        train_size=train_frac,
-        stratify=patient_labels.to_numpy(),
-        random_state=seed,
-    )
+    if train_patients is not None and test_patients is not None:
+        train_ids = [str(p) for p in train_patients]
+        test_ids = [str(p) for p in test_patients]
+    else:
+        patient_labels = gold.groupby("subject_id")["Y"].max().reindex(labeled_patients)
+        _train, _test = train_test_split(
+            labeled_patients,
+            train_size=train_frac,
+            stratify=patient_labels.to_numpy(),
+            random_state=seed,
+        )
+        train_ids = _train.tolist()
+        test_ids = _test.tolist()
 
-    train_df = labeled_wide[labeled_wide["subject_id"].isin(train_patients)].copy()
-    test_df = labeled_wide[labeled_wide["subject_id"].isin(test_patients)].copy()
+    train_df = labeled_wide[labeled_wide["subject_id"].isin(train_ids)].copy()
+    test_df = labeled_wide[labeled_wide["subject_id"].isin(test_ids)].copy()
 
     # ------------------------------------------------------------------
     # 4. Build unlabeled portion
