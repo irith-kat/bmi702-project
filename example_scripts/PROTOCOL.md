@@ -45,41 +45,6 @@ high-silver case candidates. MAP posteriors provide reliable case/control signal
 **Config:** `HF_DECOMP_DISEASE_CONFIG` (recurring decompensation events; criteria: ADHF
 diagnosis, EF < 40%, BNP/NT-proBNP, loop diuretics, pulmonary edema, orthopnea, S3 gallop)
 
-### LATTE Configuration (validated via 10-run tuning experiment)
-**Baseline date:** 2100-01-01 (study-wide anchor; MIMIC-IV dates are shifted to ~2100–2200)
-**Month window:** 3 (LATTE paper default)
-**Feature codes:** ONCE feature_codes (64 codified + 115 NLP CUIs)
-**Key codes:** LOINC:33762-6, ShortName:BNP (silver label proxy for decompensation)
-**Epochs:** 35
-**Epoch silver:** 8
-**Embedding dim:** 50
-**Layers incident:** "80" (single GRU layer — critical for small label sets; see tuning notes)
-**weight_unlabel:** 0.015 (scaled to row ratio ≈ 1/72; default 0.2 causes gradient collapse)
-**weight_prevalence:** 0.2
-**weight_contrastive:** 0.1
-**weight_smooth:** 0.1
-**weight_additional:** 0.1
-**flag_train_augment:** 1
-**max_visits:** 25
-**min_nonzero:** 20 (MAP feature matrix; set to 5 causes flexmix NaN log-likelihood)
-
-### Hyperparameter Tuning Notes
-A 10-run experiment was conducted to tune LATTE for this cohort. Key findings:
-1. **Gradient collapse** (Run 1, AUC=0.500): Default `weight_unlabel=0.2` causes 14.4×
-   unlabeled gradient dominance (72:1 row ratio with month_window=3). Fix: scale
-   `weight_unlabel ≈ n_labeled / n_unlabeled ≈ 0.014`.
-2. **LATTE checkpoint bug**: `a_semi_model_final.py` originally saved only the last 2
-   epoch checkpoints. Patched to save from `epoch_silver` onward for true best-epoch
-   selection. Worth +0.035 AUC.
-3. **Single GRU layer** (Run 9, AUC=0.697): Switching from `layers_incident="80,80"` to
-   `"80"` gained +0.043 AUC. With only ~30 positive cases the 2-layer GRU overfits.
-4. **weight_unlabel and layers interact**: single-layer needs lower weight (0.015);
-   dual-layer tolerates higher weight (0.025). Tune jointly.
-5. **EPOCHS=35, EPOCH_SILVER=8 optimal**: 50 epochs overfits (best checkpoint at ~43);
-   10 silver epochs reduces joint training time with no benefit.
-
-Full tuning results: `logs/SUMMARY.md`
-
 ### Analysis Plan
 1. `01_cohort_definition.py` — Query MIMIC-IV BigQuery: HF patients + admissions, diagnoses,
    prescriptions, procedures, lab events (ONCE-filtered), discharge notes (batched).
