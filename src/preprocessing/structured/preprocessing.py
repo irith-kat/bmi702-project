@@ -31,8 +31,8 @@ datetime + event_type).
 """
 
 import pandas as pd
-from note_ner import extract_cui_features
-from rollup import rollup_icd_to_phecode, rollup_cpt_to_ccs, rollup_ndc_to_ingredient
+from preprocessing.nlp.note_ner import extract_cui_features
+from .rollup import rollup_icd_to_phecode, rollup_cpt_to_ccs, rollup_ndc_to_ingredient
 
 
 # icd_to_events

@@ -39,6 +39,8 @@ def format_latte_input(
     unlabeled_ids: list[str] | None = None,
     train_frac: float = 0.8,
     seed: int = 42,
+    train_patients: list[str] | None = None,
+    test_patients: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Convert a long-format observation log and gold labels into the three CSV
@@ -73,8 +75,17 @@ def format_latte_input(
         Fraction of gold-labeled patients to use for training (default 0.8).
         The complement goes to the test set.
         Stratified by Y label to preserve case/control balance.
+        Ignored when ``train_patients`` / ``test_patients`` are provided.
     seed : int
         Random seed for the stratified train/test split.
+        Ignored when ``train_patients`` / ``test_patients`` are provided.
+    train_patients : list[str] | None
+        Explicit list of patient IDs for the training set.  When provided
+        together with ``test_patients``, the internal ``train_test_split``
+        is skipped entirely.  Used for k-fold cross-validation.
+    test_patients : list[str] | None
+        Explicit list of patient IDs for the test set.  Must be provided
+        together with ``train_patients``.
 
     Returns
     -------
@@ -150,18 +161,25 @@ def format_latte_input(
         )
 
     # Stratified train/test split on unique labeled patients
+    # (skipped when explicit fold splits are provided for CV)
     labeled_patients = np.array(gold["subject_id"].unique().tolist())
-    patient_labels = gold.groupby("subject_id")["Y"].max().reindex(labeled_patients)
 
-    train_patients, test_patients = train_test_split(
-        labeled_patients,
-        train_size=train_frac,
-        stratify=patient_labels.to_numpy(),
-        random_state=seed,
-    )
+    if train_patients is not None and test_patients is not None:
+        train_ids = [str(p) for p in train_patients]
+        test_ids = [str(p) for p in test_patients]
+    else:
+        patient_labels = gold.groupby("subject_id")["Y"].max().reindex(labeled_patients)
+        _train, _test = train_test_split(
+            labeled_patients,
+            train_size=train_frac,
+            stratify=patient_labels.to_numpy(),
+            random_state=seed,
+        )
+        train_ids = _train.tolist()
+        test_ids = _test.tolist()
 
-    train_df = labeled_wide[labeled_wide["subject_id"].isin(train_patients)].copy()
-    test_df = labeled_wide[labeled_wide["subject_id"].isin(test_patients)].copy()
+    train_df = labeled_wide[labeled_wide["subject_id"].isin(train_ids)].copy()
+    test_df = labeled_wide[labeled_wide["subject_id"].isin(test_ids)].copy()
 
     # ------------------------------------------------------------------
     # 4. Build unlabeled portion
@@ -229,6 +247,8 @@ def run_latte(
     weight_unlabel: float = 0.2,
     weight_contrastive: float = 0.1,
     weight_smooth: float = 0.1,
+    weight_additional: float = 0.1,
+    flag_train_augment: int = 1,
     month_window: int = 3,
     max_visits: int = 115,
     python_executable: str | None = None,
@@ -383,6 +403,10 @@ def run_latte(
         str(weight_contrastive),
         "--weight_smooth",
         str(weight_smooth),
+        "--weight_additional",
+        str(weight_additional),
+        "--flag_train_augment",
+        str(flag_train_augment),
         "--month_window",
         str(month_window),
         "--max_visits",
@@ -394,7 +418,8 @@ def run_latte(
 
     # ------------------------------------------------------------------
     # Parse output: LATTE saves "Incident_epoch{N}_1__results_latte.csv"
-    # at the final epoch (epoch_num = epochs - 1).
+    # for every epoch. Select the checkpoint with the best AUC on labeled
+    # patients rather than always taking the last epoch.
     # ------------------------------------------------------------------
     pattern = os.path.join(save_dir, "Incident_epoch*.csv")
     candidates = glob.glob(pattern)
@@ -404,7 +429,6 @@ def run_latte(
             "Check save_dir and results_filename."
         )
 
-    # Sort by epoch number embedded in the filename
     def _epoch_num(path: str) -> int:
         basename = os.path.basename(path)
         try:
@@ -412,23 +436,58 @@ def run_latte(
         except (IndexError, ValueError):
             return -1
 
-    output_path = max(candidates, key=_epoch_num)
-    logger.info("Reading LATTE predictions from %s", output_path)
+    def _parse(path: str) -> pd.DataFrame:
+        df = pd.read_csv(path, index_col=0)
+        df = df.rename(
+            columns={
+                "Patient_num": "subject_id",
+                "Date": "visit_T",
+                "Y_pred": "incident_probability",
+                "Y_label:": "Y_true",
+            }
+        )
+        df["subject_id"] = df["subject_id"].astype(str)
+        return df[
+            ["subject_id", "visit_T", "incident_probability", "Y_true"]
+        ].reset_index(drop=True)
 
-    pred_df = pd.read_csv(output_path, index_col=0)
-    pred_df = pred_df.rename(
-        columns={
-            "Patient_num": "subject_id",
-            "Date": "visit_T",
-            "Y_pred": "incident_probability",
-            "Y_label:": "Y_true",
-        }
-    )
-    pred_df["subject_id"] = pred_df["subject_id"].astype(str)
+    def _auc(df: pd.DataFrame) -> float:
+        from sklearn.metrics import roc_auc_score
 
-    return pred_df[
-        ["subject_id", "visit_T", "incident_probability", "Y_true"]
-    ].reset_index(drop=True)
+        labeled = df[df["Y_true"] != -1]
+        if labeled["Y_true"].nunique() < 2:
+            return 0.0
+        try:
+            return roc_auc_score(labeled["Y_true"], labeled["incident_probability"])
+        except Exception:
+            return 0.0
+
+    # Evaluate all checkpoints; fall back to last epoch if no labeled rows
+    best_path, best_auc = None, -1.0
+    for path in sorted(candidates, key=_epoch_num):
+        auc = _auc(_parse(path))
+        if auc > best_auc:
+            best_auc, best_path = auc, path
+
+    if best_path is None:
+        best_path = max(candidates, key=_epoch_num)
+
+    last_path = max(candidates, key=_epoch_num)
+    last_epoch = _epoch_num(last_path)
+    best_epoch = _epoch_num(best_path)
+
+    if best_epoch != last_epoch:
+        logger.info(
+            "Best checkpoint: epoch %d (AUC=%.4f) — last epoch was %d. "
+            "Using best epoch.",
+            best_epoch,
+            best_auc,
+            last_epoch,
+        )
+    else:
+        logger.info("Best checkpoint: epoch %d (AUC=%.4f).", best_epoch, best_auc)
+
+    return _parse(best_path)
 
 
 # ---------------------------------------------------------------------------
