@@ -17,7 +17,7 @@ There is an example pipeline in `examples/latte`
 | Cross-sectional, one label per patient | Longitudinal, one label per patient-period |
 | No gold labels needed | Requires ~100 gold-labeled patients |
 
-Use LATTE when you need **timing** or **disease activity** — not just presence.
+Use LATTE when you need **timing** or **disease activity** — not just presence. YOu need to ensure the time aggregation is defined, if not ask the user while planning.
 
 ## Two Modes
 
