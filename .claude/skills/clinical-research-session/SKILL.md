@@ -102,6 +102,9 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 **NLP / notes:**
 - Should clinical notes be used for NLP CUI features? (improves sensitivity; adds extra runtime — see `mimic-note-preprocessing`)
 
+**Timing**
+- Temporal aggregation of the codes (1-month, 3-month...)? affects the granularity of the data and the model's ability to learn temporal patterns; also affects runtime and sparsity.
+
 **ONCE files:**
 - Are ONCE files available in `input/`? (required for MAP; generate at https://shiny.parse-health.org/ONCE/ if not)
 
@@ -109,6 +112,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - Age < 18
 - Missing key variables
 - Specific admission types to exclude
+- Minimum follow-up, washup period... whatever is relevant to the research question
 
 **Characterization goals** (if cohort characterization is in scope):
 - Demographics (age, sex, race)
@@ -181,7 +185,8 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 - [Skill]: [Why]
 ```
 
----
+## Phase 3: Analysis Execution
+Write and run scripts for each analysis step. Refine the scripts as needed, and when you finish write a `RESULTS.md` summarizing key findings.
 
 ## Scientific Integrity Guardrails
 
