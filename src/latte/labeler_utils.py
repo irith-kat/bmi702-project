@@ -826,6 +826,9 @@ def labels_to_latte(
             return int(row["T"] >= int(inc_T))
         return -1
 
+    # Drop rows where T is NA (obs_log rows with unparseable datetimes); these
+    # would cause int(pd.NA) TypeError since T is Int64 nullable.
+    all_visit_pairs = all_visit_pairs.dropna(subset=["T"])
     all_visit_pairs["Y"] = all_visit_pairs.apply(_compute_Y, axis=1)
     return (
         all_visit_pairs[["subject_id", "T", "Y"]]
