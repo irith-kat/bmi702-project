@@ -1,0 +1,29 @@
+1. FULL QUESTION:
+/clinical-research-session Among all patients in MIMIC with a Heart Failure code, I want a cohort with the incident date of HF for them. Aggregate data and visits to 3 month periods. For people with HF diagnosed, it is okay to label the first 3-month period as the incident date. For people that were miscoded, I want all 3-month periods as Y=0. Use around 120 gold labeled patients, and for the silver label you can use the HF phecode code. Use NLP derived features form notes on BigQuery, codified data from local duckdb.
+
+Other than the fully labeled cohort, i want to see how the refined label compares to the silver label (concordant, earlier, later), and an evaluation of the suitability of this approach for the specific dataset and clinical question.
+
+INTERVIEW: only asked inclusion criteria and ONCE codes, as most of the information is in the prompt. Correctly identified LATTE as the proper pipeline, in Mode 1.
+
+2. Remove miscoding directions and gold label directions:
+/clinical-research-session I want a cohort with the incident date of Heart Failure among all patients in MIMIC with a Heart Failure code. Aggregate data and visits to 3 month periods, and only include patients who have at least two 3-month periods with data before the first code, to remove people who developed HF before entering MIMIC. For silver label, you can use the HF phecode code. Use NLP derived features from notes on BigQuery, codified data from local duckdb.
+
+Other than the fully labeled cohort, i want to see how the refined label compares to the silver label (concordant, earlier, later), and an evaluation of the suitability of this approach for the specific dataset and clinical question.
+
+QUESTIONS: clarified inclusion criteria, characterization, ONCE file location. Protocol contained very similar information as 1, with a range of gold labels 100-200 according to the skill.
+
+3. Remove silver label mentions, technical dataset details:
+/clinical-research-session I want a cohort with the incident date of Heart Failure among all patients in MIMIC with a Heart Failure code. Aggregate data and visits to 3 month periods, and only include patients who have at least two 3-month periods with data before the first code.
+
+Other than the fully labeled cohort, i want to see how the refined label compares to the silver label (concordant, earlier, later), and an evaluation of the suitability of this approach for the specific dataset and clinical question.
+Before drafting the protocol, I need a few details I can't infer from your description.
+
+QUESTION: Dataset, ONCE, NLP, gold labels. Identifies sources of bias and limitations, but moves the data aggregation to after extracting raw data and preprocessing rather than at the beggining. Could be due to not justifying why 3-month period, although there is not really a correct way and effect might be null.
+
+GENERAL OBSERVATIONS:
+
+The interview phase covers some of the details removed from the prompts, other details are inferred or decided by the agent based on the ONCE files, or on what seems adequate based on his parametric knowledge. To the best of my knowledge, all the PROTOCOLs seem adequate.
+
+The main finding on these tests is that the interview phase is effective, but it cannot comprehensively cover every single detail, especially for LATTE as it has many possible dimensions. It proves that while the pipeline removes the technical barrier for accessing this cohort building algorithms, it still requires clinical knowledge to read and validate the protocol, and the more detail in the prompt (inclusion criteria, silver label construction, time aggregation...) the less modifications you will need to do to the protocol. The agent is very good at documenting everything that he does, so whatever is stated in the protocol he will do, and any modifications he will justify in RESULTS.md.
+
+The conclusion is to have a clear idea of what cohort you want to build, if any design questions are unclear plan them with another LLM of choice, and once clear send a prompt to our system and watch the cohort build itself!
