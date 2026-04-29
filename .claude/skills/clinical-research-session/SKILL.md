@@ -60,9 +60,10 @@ Every analysis step that produces a result MUST be executed from a stored script
 **The pattern — for every analysis step:**
 1. **Write** the script to `scripts/`
 2. **Run** it — outputs (parquets, JSON plots) land in `data/` and `plots/`
-3. **Report** results by loading and summarizing the script's outputs in the terminal
+3. Evaluate the outputs; if they look wrong, **refine** the script and re-run until satisfied.
+4. **Report** results by loading and summarizing the script's outputs in the terminal
 
-Interactive exploration (checking schemas, small test queries to understand data shape) is fine — not everything needs a script. But the moment you produce a result to communicate to the researcher, it must come from a stored script.
+Interactive exploration (checking schemas, small test queries to understand data shape) is fine, not everything needs a script. But the moment you produce a result to communicate to the researcher, it must come from a stored script.
 
 **Script requirements:**
 - **Self-contained**: imports, `set_dataset()`, SQL strings, analysis code, output writes — everything to run `python scripts/cohort_definition.py` from the study directory
@@ -75,12 +76,12 @@ Interactive exploration (checking schemas, small test queries to understand data
 
 ## Phase 1: Research Interview
 
-Collect study parameters through structured terminal conversation. The interview is **adaptive** — ask only what you cannot infer from the user's initial description.
+Collect study parameters through structured terminal conversation. The interview is **adaptive**, ask only what you cannot infer from the user's initial description. At any time during the interview, feel free to explore the dataset to check for preliminary cohort sizes, code frequencies, presence of anchor, history lengths, etc. This can help you ask more informed questions and guide the user towards a feasible research question. Save exploratory script in the `scripts/` folder for reproducibility.
 
 **Guidelines:**
 - **Skip questions** the user already answered in their prompt
 - **Add questions** not in the library if the research question demands it
-- **Ask in batches** where possible — not one question at a time
+- **Ask in batches** where possible, not one question at a time
 
 ### Question Library
 
@@ -93,7 +94,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 **Scope of the session:**
 - Cohort identification only (who has the condition?)
 - Cohort identification + characterization (who has it, and what do they look like?)
-- Downstream analysis planned? (flag for a future session, not this one)
+- Downstream analysis planned? (can be useful for deciding phenotyping approach, identifying dataset pitfalls or biases to watch for)
 
 **Dataset:**
 - `mimic-iv` (full)
@@ -106,7 +107,7 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - Temporal aggregation of the codes (1-month, 3-month...)? affects the granularity of the data and the model's ability to learn temporal patterns; also affects runtime and sparsity.
 
 **ONCE files:**
-- Are ONCE files available in `input/`? (required for MAP; generate at https://shiny.parse-health.org/ONCE/ if not)
+- Are ONCE files available in `input/`? (required; direct user to generate at https://shiny.parse-health.org/ONCE/ if not)
 
 **Exclusion criteria** (multiple allowed):
 - Age < 18
@@ -119,29 +120,15 @@ Use `AskUserQuestion` to collect structured answers. Compose from these standard
 - Comorbidities (top ICD clusters, etc.)
 - Top ONCE features present in cases vs controls
 - Temporal patterns (admission trends, seasonality)
+- Comparison with the gold labels if available (LLM generated or other)
 
 ### After the Interview
 
-Review answers in the terminal. Key refinements to consider:
+Review answers in the terminal and ask more questions if needed. Iterate a maximum of 3 times. Key refinements to consider:
 - **Anchor ICD/PheCode** — Confirm it exists before proceeding
 - **NLP decision** — Confirm whether notes will be used before writing feature-matrix code
 
-**Decide phenotyping approach** using the `phenotyping-strategy` skill criteria:
-
-| Signal | Points toward |
-|--------|--------------|
-| ONCE files available | MAP |
-| ≥1,000 candidates expected | MAP |
-| ICD specificity known to be low | MAP |
-| Need per-patient probability scores | MAP |
-| Need to know **when** disease first occurred? | MAP + LATTE |
-| Time-to-event / incidence analysis planned? | MAP + LATTE |
-| Can obtain ~30–200 Gemini gold labels? | MAP + LATTE |
-| No ONCE files / exploratory / pilot | Rule-based |
-| Small dataset (<200 candidates) | Rule-based |
-| Simple inclusion criteria only | Rule-based |
-
-State the chosen approach and reason explicitly before drafting the protocol.
+**Decide phenotyping approach** using the `phenotyping-strategy` skill criteria, state the chosen approach and reason explicitly before drafting the protocol.
 
 ---
 
@@ -169,7 +156,7 @@ Draft a structured protocol. Save to `output_dir / "PROTOCOL.md"` and show the r
 **Anchor ICD/PheCode:** [e.g. 455 — Hemorrhoids]
 **NLP:** [Yes — clinical notes / No — structured EHR only]
 **ONCE files:** [codified file name, narrative file name, or N/A]
-**MAP rationale:** [why MAP over rule-based]
+**MAP rationale:** [why MAP over rule-based if applicable]
 **MAP config:** [min_nonzero threshold; NLP contribution expected: high / low / unknown]
 
 ### Characterization Plan
@@ -237,7 +224,7 @@ Preferred plot types for cohort characterization: CONSORT flow (annotated diagra
 
 ### Reproducibility
 
-- **Write → run → report.** Never report results from throwaway interactive code.
+- **Write → run → evaluate → report.** Never report results from throwaway interactive code.
 - **Iterate on scripts, not inline.** If a step needs fixing, edit the script and re-run.
 - **Later scripts read earlier outputs.** The characterization script loads `data/cohort.parquet` from the cohort definition script — not by re-running the query.
 
@@ -272,9 +259,9 @@ Steps must run in order — each step depends on the output of the previous.
 
 ### Hemorrhoid cohort identification and characterization
 
-**User:** "Find all patients with hemorrhoids using ICD codes, then characterize the cohort"
+**User:** "Find all patients with hemorrhoids in MIMIC-IV, then characterize the cohort"
 
-**What you already know:** disease = hemorrhoids, method = rule-based ICD filter, goal = identification + characterization. Skip most interview questions.
+**What you already know:** disease = hemorrhoids, goal = identification + characterization. You can infer the need for MAP for better sensitivity, and the need for demographic and comorbidity characterization.
 
 **Interview (ask in one batch):**
 - Which dataset — `mimic-iv` or `mimic-iv-demo` for development?
@@ -288,9 +275,8 @@ Steps must run in order — each step depends on the output of the previous.
 
 **Draft protocol → show to researcher → wait for approval**
 
-**Execute — three scripts:**
+**Execute:**
 
-```
 cohort_definition.py  ← m4-api: pull diagnoses_icd, procedures, prescriptions;
                          build obs_log via mimic-preprocessing;
                          save obs_log.parquet
@@ -305,11 +291,9 @@ map_phenotyping.py    ← load obs_log.parquet (or obs_log_with_nlp.parquet); lo
 
 characterization.py   ← load cohort.parquet; age histogram, sex/race bar charts,
                          top-10 comorbidities, top ONCE features cases vs controls
-```
 
-**After cohort is defined:**
-- Report CONSORT flow: total subjects → candidates → cases → controls
-- Compare top features between cases and controls — feature prevalence bar chart
+**After execution:**
+- Write `RESULTS.md` summarizing cohort size, key characterization findings, limitations, and next steps.
 
 ---
 
