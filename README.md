@@ -75,6 +75,24 @@ The `.claude/skills/` directory contains all agent skills. In Claude Code, start
 
 The agent will first interview you about your research question. Then it will generate a fully reproducible study protocol that you can conversationally refine. Once approved, it will autonomously invoke the other skills (`mimic-preprocessing`, `map-phenotyping`, `latte-phenotyping`, etc.) as needed to define your desired cohort. All generated scripts, protocols, and results are written to `output/<study-name>/`.
 
+## Pipeline Overview
+
+Our pipeline consists of an agentic skill library and Python source modules that together comprise five steps of a canonical multimodal EHR-based clinical cohort study:
+
+1. Plan research protocol
+2. Build codified features
+3. Build NLP features
+4. Run phenotyping algorithm
+5. Characterize cohort
+
+At the highest level, the `clinical-research-session` skill serves as our pipeline orchestrator, defining these five steps and the lower-level skills needed for each step. At the lowest level, we utilize M4 as our data access layer to MIMIC-IV (though this can also work with other EHR databases given access). In between sits our skills and modules responsible for each step of the pipleine, including structured preprocessing, NLP, MAP, and LATTE. Our skill library is in `.claude/skills/` and our Python source modules are in `src/`. This pipeline is illustrated below:
+
+<img src="figures/METHODS.png" width="800">
+
+From the user side, a typical workflow of our pipeline is as follows, shown on Claude Code:
+
+<img src="figures/PIPELINE.png" width="800">
+
 ## Miscellaneous
 
 ### Test suite
