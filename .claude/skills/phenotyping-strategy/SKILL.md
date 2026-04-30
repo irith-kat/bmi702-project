@@ -23,6 +23,9 @@ Three approaches are available. Choose based on the research question (ever/neve
 | No co-feature data available? | ✓ | — | — |
 | Exploratory / quick check? | ✓ | — | — |
 
+## Vocabulary:
+If you encounter an unknown vocabulary in the database that is not translatable with the preprocessing tools, and you need it to build the cohort, you can stop the research session and ask the user to look for a mapping file (custom, ATHENA...) or create it. Once the new mapping is provide, you can follow the `custom-vocab-mapping` skill to add it to the pipeline and continue with the planning.
+
 ## Rule-Based Filter
 
 Filter the observation log directly. No model required.

@@ -27,6 +27,8 @@ Use LATTE when you need **timing** or **disease activity** — not just presence
 Gold labels: Gemini identifies the **first** admission where the disease appeared.
 `labels_to_latte()` creates: Y=0 before incident window, Y=1 at/after.
 
+To derive the refined incident date from LATTE probabilities, use the **relative 50% threshold** (first period where `p > min + 0.5 × (max − min)` per patient). Do not use argmax — see Common Pitfalls.
+
 ### Mode 2 — Recurring Events
 *Did the patient have a disease activity event in this time window?*
 
@@ -227,6 +229,8 @@ predictions_df = run_latte(
 
 Run this script multiple times while tuning hyperparameters. Once satisfied or after 15 iterations, use the best configuration for inference on the full cohort. For a stable AUC estimate over the full labeled set, use 5-fold stratified CV (`07_latte_cv.py` is the reference implementation; `format_latte_input` accepts `train_patients`/`test_patients` to drive explicit fold splits).
 
+## Step 5: Evaluation
+Use the gold labels from Gemini and evaluate LATTE's predicted probabilities against them, ensuring the algorithm is learning meaningful patterns rather than overfitting or collapsing to trivial solutions. Use the information to guide hyperparameter tuning and final model selection, one conclusion from the pipeline can be that LATTE is not suitable for the use case because of dataset limitations, lack of signal, or other factors. This is a valid outcome and should be reported as such, with an analysis of the failure modes and potential next steps.
 ---
 
 ## Silver Label
@@ -305,3 +309,4 @@ src/latte/
 | Gemini 404 | Use `location="global"` for gemini-3.1-flash-lite-preview |
 | OOM during LATTE training | Reduce `MAX_UNLABELED` to 10,000; reduce `max_visits` to 25 |
 | Constant predictions (~0.485–0.5 for all patients, AUC≈0.5) | **Gradient collapse** from `weight_unlabel` too high. With `month_window=3`, each patient contributes ~5 rows, so the row ratio is ~5× the patient ratio. Set `weight_unlabel ≈ n_labeled / n_unlabeled` (e.g. 0.015 for 120 labeled / 10k unlabeled). Default 0.2 is calibrated for the simulation data only. |
+| (Mode 1) Argmax of LATTE probability selects last visit for most patients | LATTE's cumulative loss (Y=1 for all post-incident periods) pushes the GRU toward monotone-increasing trajectories — argmax = last visit for ~60% of patients regardless of disease or dataset. Use **relative 50% threshold** instead: `first T where p[T] > p.min() + 0.5 × (p.max() − p.min())` per patient. Validate: if gold labels are available, gold-vs-refined median delta should be ~0. |

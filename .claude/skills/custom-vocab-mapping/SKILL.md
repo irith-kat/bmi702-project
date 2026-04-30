@@ -43,7 +43,7 @@ Custom code
     │
     ├─► CPT/HCPCS ──────────► CCS        (procedure modality)
     │
-    └─► itemid ─────────────► LOINC      (lab modality)
+    └───────────────────────► LOINC      (lab modality)
 ```
 
 If your crosswalk goes directly to the final vocab (e.g., custom → PheCode), skip the
@@ -90,9 +90,10 @@ Identify:
 | NDC (any format) | custom → NDC → normalize → RxNorm join | Step 4b |
 | Free-text drug name | custom → drug name → RxNorm join | Step 4c |
 | CPT or HCPCS code | custom → CPT → CCS (already handled by rollup) | Step 4d |
-| Lab itemid (MIMIC-IV) | custom itemid → LOINC via `rollup_itemid_to_loinc` | Step 4e |
 | PheCode directly | emit mapping with `ICD, Phecode, PhecodeString` columns | Step 4a shortcut |
 | RxNorm ingredient ID directly | emit mapping with `ndc, ingredient_id, ingredient_name` columns | Step 4b shortcut |
+
+Anything not covered in these steps you can infer how to handle it based on the examples provided, as they all mostly work the same way (join custom → bridge vocab → rollup vocab, then output a mapping CSV with the same schema as the existing mapping dicts in `mapping_dicts/`).
 
 ---
 
@@ -270,35 +271,6 @@ crosswalk_df["cpt_code"] = crosswalk_df["cpt_code"].str.strip().str.upper()
 ```python
 proc_df = proc_df.merge(crosswalk_df, on="local_proc_code", how="left")
 obs = cpt_to_events(proc_df, cpt_col="cpt_code", date_col="proc_date")
-```
-
----
-
-### 4e — Lab: itemid → LOINC
-
-MIMIC-IV `labevents` uses integer `itemid` keys. `rollup_itemid_to_loinc()` joins them
-to LOINC codes using `mapping_dicts/d_labitems_to_loinc.csv` (MIT-LCP OMOP mapping,
-1400/1630 itemids covered). For non-MIMIC datasets, produce a crosswalk to MIMIC itemids
-or directly to LOINC codes and pass it via `mapping_file=`.
-
-```python
-from rollup import rollup_itemid_to_loinc
-from preprocessing import lab_to_events
-
-labevents_with_loinc = rollup_itemid_to_loinc(
-    df            = labevents_df,
-    itemid_column = "itemid",
-    mapping_file  = "mapping_dicts/d_labitems_to_loinc.csv",
-)
-
-lab_obs = lab_to_events(
-    df          = labevents_with_loinc,
-    loinc_col   = "loinc_code",
-    date_col    = "charttime",
-    value_col   = "valuenum",
-    subject_col = "subject_id",
-)
-# event format: "LOINC:11555-0"
 ```
 
 ---
