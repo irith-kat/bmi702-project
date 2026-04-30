@@ -7,7 +7,7 @@ repos:
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files
-        args: ['--maxkb=2048']
+        args: ['--maxkb=6000']
         exclude: '\.(mp4|avi|mov|mkv)$|static/vendor/'
       - id: mixed-line-ending
 

@@ -22,3 +22,5 @@ uv run python mapping_dicts/build_ndc_to_rxnorm.py
 ```
 
 See `athena_ndc_rxnorm_export/README.md` for download instructions.
+
+NOTE: the mapping dicts are stored in github inside the `mapping_dicts_csvs.zip` file to reduce clutter. Unzip them before running the pipeline.
