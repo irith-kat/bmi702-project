@@ -4,12 +4,12 @@
 
 The goal of this ablation study is to isolate the contributions of preprocessing (A1 -> A2), multimodality (A2 -> A3), and phenotyping (A3 -> A4). We define the following 4 configurations testing Claude Code's cohort-building performance with progressively richer skill sets.
 
-| Config | Skills | Python Modules | Data Directories |
+| Setting | Skills | Python Modules | Data Directories |
 |--------|--------|----------------|-----------------|
-| A1-base | `clinical-research-session`, `m4-api`, `mimic-table-relationships` |   | `mimiciv/` |
-| A2-structured | + `mimic-preprocessing` | `src/preprocessing/structured/` | + `mapping_dicts/` |
-| A3-nlp | + `mimic-note-preprocessing` | + `src/preprocessing/nlp/` | + `input/` (ONCE files) |
-| A4-full | + `phenotyping-strategy`, `map-phenotyping`, `latte-phenotyping` | + `src/map/` + `src/latte/` + `src/LATTE-main/` |  |
+| Baseline | `clinical-research-session`, `m4-api`, `mimic-table-relationships` |   | `mimiciv/` |
+| Structured | + `mimic-preprocessing` | `src/preprocessing/structured/` | + `mapping_dicts/` |
+| Multimodal | + `mimic-note-preprocessing` | + `src/preprocessing/nlp/` | + `input/` (ONCE files) |
+| Full | + `phenotyping-strategy`, `map-phenotyping`, `latte-phenotyping` | + `src/map/` + `src/latte/` + `src/LATTE-main/` |  |
 
 IMPORTANT: `clinical-research-session`, which is our orchestrator skill, must change according to each ablation setup and waht other skills are (not) available. The current `clinical-research-session` supports the full ablation. When creating each ablation config, edit and prune the `clinical-research-session` as necessary.
 
