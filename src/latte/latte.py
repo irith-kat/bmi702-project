@@ -264,7 +264,7 @@ def run_latte(
     Parameters
     ----------
     latte_dir : str
-        Path to the ``src/LATTE-main/LATTE-main/`` directory.
+        Path to the ``src/LATTE-main/`` directory.
         ``a_train_final.py`` must be present there and all its relative
         imports (``a_utilize_semi``, ``a_semi_model_final``) must resolve.
     data_dir : str

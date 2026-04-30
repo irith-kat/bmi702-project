@@ -38,9 +38,7 @@ N_CODES = 30  # feature codes (small for speed)
 N_EPOCHS = 5  # keep test fast; real runs use 50
 N_EPOCH_SILVER = 2
 
-LATTE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "src", "LATTE-main", "LATTE-main"
-)
+LATTE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "src", "LATTE-main")
 
 FEATURE_CODES = (
     [f"PheCode:{400 + i}" for i in range(10)]
