@@ -25,10 +25,10 @@ from latte.latte import format_latte_input, run_latte
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 out = Path(__file__).resolve().parent.parent
-LATTE_DIR = str(REPO_ROOT / "src" / "LATTE-main" / "LATTE-main")
+LATTE_DIR = str(REPO_ROOT / "src" / "LATTE-main")
 
 BASELINE_DATE = "2100-01-01"
 MONTH_WINDOW = 2

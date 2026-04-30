@@ -23,7 +23,7 @@ from m4 import execute_query, set_dataset
 from m4.config import set_active_backend
 from preprocessing.nlp import get_once_features
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 out = Path(__file__).resolve().parent.parent
 (out / "data").mkdir(exist_ok=True)
 (out / "plots").mkdir(exist_ok=True)

@@ -18,7 +18,7 @@ import pandas as pd
 from preprocessing.nlp import get_once_features
 from preprocessing.structured import notes_to_events
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 out = Path(__file__).resolve().parent.parent
 
 NOTES_PER_PATIENT = 3  # most recent N discharge notes per patient

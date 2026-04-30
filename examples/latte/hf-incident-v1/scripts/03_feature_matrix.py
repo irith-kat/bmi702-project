@@ -27,7 +27,7 @@ from map import preprocess_map
 from preprocessing.nlp import get_once_features
 from preprocessing.structured import build_obs_log, rollup_itemid_to_loinc
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 out = Path(__file__).resolve().parent.parent
 MAPPING_ROOT = REPO_ROOT / "mapping_dicts"
 

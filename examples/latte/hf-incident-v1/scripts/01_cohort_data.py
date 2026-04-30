@@ -24,7 +24,7 @@ set_active_backend("duckdb")
 set_dataset("mimic-iv")
 
 out = Path(__file__).resolve().parent.parent
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[4]
 MAPPING_ROOT = REPO_ROOT / "mapping_dicts"
 (out / "data").mkdir(exist_ok=True)
 
