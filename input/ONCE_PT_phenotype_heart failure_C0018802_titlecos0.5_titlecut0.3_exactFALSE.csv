@@ -1,0 +1,116 @@
+STR|CUI
+Amiodarone|C0002598
+Angina Pectoris|C0002962
+Angiotensin-Converting Enzyme Inhibitors|C0003015
+Cardiac Arrhythmia|C0003811
+Atrial Fibrillation|C0004238
+Bumetanide|C0006376
+Low Cardiac Output|C0007166
+Cardiomyopathy, Dilated|C0007193
+Hypertrophic Cardiomyopathy|C0007194
+Coronary Arteriosclerosis|C0010054
+Coronary Artery Bypass Surgery|C0010055
+Coronary heart disease|C0010068
+Coronary Thrombosis|C0010072
+Diabetes Mellitus|C0011849
+Diabetes Mellitus, Non-Insulin-Dependent|C0011860
+Low sodium diet|C0012169
+Digoxin|C0012265
+Diuretics|C0012798
+Dyspnea|C0013404
+Echocardiography|C0013516
+Furosemide|C0016860
+Heart Diseases|C0018799
+Cardiomegaly|C0018800
+Heart failure|C0018801
+Congestive heart failure|C0018802
+Heart Transplantation|C0018823
+Hypertensive disease|C0020538
+Pulmonary Hypertension|C0020542
+Hypotension|C0020649
+Ischemia|C0022116
+Left-Sided Heart Failure|C0023212
+Chronic Obstructive Airway Disease|C0024117
+Metolazone|C0025854
+Metoprolol|C0025859
+Myocardial Infarction|C0027051
+Myocarditis|C0027059
+Pressure- physical agent|C0033095
+Rales|C0034642
+Spironolactone|C0037982
+Venous Engorgement|C0042484
+Tachycardia, Ventricular|C0042514
+carvedilol|C0054836
+torsemide|C0076840
+Ventricular arrhythmia|C0085612
+Left Ventricular Hypertrophy|C0149721
+Myocardial Ischemia|C0151744
+Implantable defibrillator|C0162589
+Fluid restriction|C0204700
+Severe (severity modifier)|C0205082
+Protodiastolic gallop with abnormally audible third heart sound|C0232278
+Heart Failure, Right-Sided|C0235527
+Hepatojugular reflux|C0239949
+Ventricular Dysfunction, Left|C0242698
+Ventricular Dysfunction|C0242973
+Acute heart failure|C0264714
+Chronic heart failure|C0264716
+Conduction disorder of the heart|C0264886
+Hepatic congestion|C0267821
+Body fluid retention|C0268000
+Digoxin measurement|C0337449
+Myocardial dysfunction|C0340515
+Ventricular Tachycardia by ECG Finding|C0344428
+Ischemic cardiomyopathy|C0349782
+Pressure (finding)|C0460139
+Increase in blood pressure|C0497247
+Diastolic dysfunction|C0520863
+Angiotensin II receptor antagonist|C0521942
+Water retention (finding)|C0542203
+Fluid overload|C0546817
+Decompensated cardiac failure|C0581377
+Personal failure|C0680095
+Biventricular congestive heart failure|C0685095
+Feline hypertrophic cardiomyopathy|C0685102
+Systolic dysfunction|C0749225
+Angiotensin Receptor Antagonists|C0815017
+Cardiomyopathies|C0878544
+Diuretic therapy|C0948575
+eplerenone|C0961485
+Heart Failure, Systolic|C1135191
+Heart Failure, Diastolic|C1135196
+Natriuretic Peptides|C1144709
+Cardiac Resynchronization Therapy|C1167956
+Diabetes resolved|C1278603
+Device therapy|C1504335
+Renal Insufficiency|C1565489
+ADHF|C1609524
+New York Heart Association Class|C1882083
+New York Heart Association Class II|C1882085
+New York Heart Association Class III|C1882086
+Coronary Artery Disease|C1956346
+Ischemic congestive cardiomyopathy|C1960867
+cardiac catheterization - cardiac output in liters per minute|C2007409
+stress echo measurements - ejection fraction|C2020641
+cardiovascular surgery result: dyspnea|C2024878
+systolic congestive heart failure|C2039715
+dilated ischemic cardiomyopathy|C2063324
+continuous electrocardiogram ventricular tachycardia|C2108113
+diastolic congestive heart failure|C2183328
+Cardio-Renal Syndrome|C2242703
+Natriuretic peptide test|C2349989
+Ejection fraction (finding)|C2700378
+Atrio-Biventricular Pacing|C2936372
+Right ventricular failure|C2939447
+Heart failure with normal ejection fraction|C2960127
+Pulmonary arterial hypertension|C2973725
+Myocardial Disorder|C3241958
+Cardiac dysfunction|C3277906
+Acute Myocardial Infarction by ECG Finding|C3541950
+Ventricular Arrhythmia ECG Assessment|C3812282
+Heart failure with reduced ejection fraction|C3839346
+Reduced ejection fraction|C4022792
+Reduced systolic function|C4025008
+Angiotensin-1, human|C4521302
+Hypertrophic obstructive cardiomyopathy|C4551472
+beta-adrenergic antagonist therapy|C4723804
