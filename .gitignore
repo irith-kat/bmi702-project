@@ -213,10 +213,11 @@ Phecode_map_v1_2_icd9_icd10cm.csv
 mimiciv/
 m4_data/
 *.parquet
+output/
 mapping_dicts/*.csv
 mapping_dicts/*/*.csv
-output/**/data/
-output/**/plots/
+examples/**/data/
+examples/**/plots/
 
 # LATTE-main
 src/LATTE-main/LATTE-main/a_train_final_sim.py
