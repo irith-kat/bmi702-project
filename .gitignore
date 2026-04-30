@@ -215,7 +215,8 @@ m4_data/
 *.parquet
 mapping_dicts/*.csv
 mapping_dicts/*/*.csv
-output/
+output/**/data/
+output/**/plots/
 
 # LATTE-main
 src/LATTE-main/LATTE-main/a_train_final_sim.py
