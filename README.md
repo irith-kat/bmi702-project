@@ -6,6 +6,8 @@ From a single prompt, the agent conducts a structured interview with the researc
 
 The framework builds on [M4](https://github.com/hannesill/m4) for natural-language SQL access to EHR databases, and extends it with a multimodal preprocessing and phenotyping layer orchestrated through Claude Code skills. It is designed to be modular and adaptable to any SQL-queryable EHR dataset, not just MIMIC-IV.
 
+This project was originally created as a part of BMI 702: Foundations of Artificial Intelligence in Medicine at the Harvard Medical School.
+
 ## Getting Started
 
 ### 1. Install dependencies
